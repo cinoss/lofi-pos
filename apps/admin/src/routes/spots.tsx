@@ -1,0 +1,204 @@
+import { useState } from "react";
+import { z } from "zod";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useApiClient } from "@lofi-pos/pos-ui";
+import { Button } from "@lofi-pos/ui/components/button";
+import { Spot, SpotInput } from "@lofi-pos/shared";
+import { Modal } from "../lib/modal";
+
+const SpotList = z.array(Spot);
+
+interface FormState {
+  id: number | null;
+  name: string;
+  kind: "room" | "table";
+  hourly_rate: string; // empty = null
+  parent_id: string;
+}
+const empty: FormState = {
+  id: null,
+  name: "",
+  kind: "table",
+  hourly_rate: "",
+  parent_id: "",
+};
+
+export function SpotsRoute() {
+  const api = useApiClient();
+  const qc = useQueryClient();
+  const [form, setForm] = useState<FormState | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const list = useQuery({
+    queryKey: ["admin", "spots"],
+    queryFn: () => api.get("/admin/spots", SpotList),
+  });
+
+  const upsert = useMutation({
+    mutationFn: async (f: FormState) => {
+      const payload = SpotInput.parse({
+        name: f.name,
+        kind: f.kind,
+        hourly_rate: f.hourly_rate.trim() === "" ? null : Number(f.hourly_rate),
+        parent_id: f.parent_id.trim() === "" ? null : Number(f.parent_id),
+      });
+      if (f.id == null) {
+        await api.post(`/admin/spots`, Spot, payload);
+      } else {
+        await api.put(`/admin/spots/${f.id}`, Spot, payload);
+      }
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["admin", "spots"] });
+      setForm(null);
+      setError(null);
+    },
+    onError: (e: unknown) => setError(e instanceof Error ? e.message : "save failed"),
+  });
+
+  const remove = useMutation({
+    mutationFn: async (id: number) => {
+      await api.delete(`/admin/spots/${id}`, z.void());
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "spots"] }),
+  });
+
+  return (
+    <div>
+      <div className="mb-4 flex items-center justify-between">
+        <h1 className="text-2xl font-semibold">Spots</h1>
+        <Button onClick={() => setForm(empty)}>+ New Spot</Button>
+      </div>
+      {list.isLoading && <p>Loading…</p>}
+      {list.error && <p className="text-red-600">{String(list.error)}</p>}
+      <table className="w-full border-collapse rounded-lg bg-white shadow-sm">
+        <thead className="border-b bg-gray-100 text-left text-sm">
+          <tr>
+            <th className="p-3">ID</th>
+            <th className="p-3">Name</th>
+            <th className="p-3">Kind</th>
+            <th className="p-3">Hourly</th>
+            <th className="p-3">Parent</th>
+            <th className="p-3">Status</th>
+            <th className="p-3" />
+          </tr>
+        </thead>
+        <tbody>
+          {(list.data ?? []).map((s) => (
+            <tr key={s.id} className="border-b text-sm last:border-b-0">
+              <td className="p-3">{s.id}</td>
+              <td className="p-3">{s.name}</td>
+              <td className="p-3">{s.kind}</td>
+              <td className="p-3">{s.hourly_rate ?? "—"}</td>
+              <td className="p-3">{s.parent_id ?? "—"}</td>
+              <td className="p-3">{s.status}</td>
+              <td className="p-3 text-right">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() =>
+                    setForm({
+                      id: s.id,
+                      name: s.name,
+                      kind: s.kind,
+                      hourly_rate: s.hourly_rate?.toString() ?? "",
+                      parent_id: s.parent_id?.toString() ?? "",
+                    })
+                  }
+                >
+                  Edit
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="text-red-600"
+                  onClick={() => {
+                    if (window.confirm(`Delete ${s.name}?`)) remove.mutate(s.id);
+                  }}
+                >
+                  Delete
+                </Button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <Modal
+        open={form != null}
+        title={form?.id == null ? "New spot" : `Edit spot #${form?.id}`}
+        onClose={() => {
+          setForm(null);
+          setError(null);
+        }}
+      >
+        {form && (
+          <form
+            className="space-y-3"
+            onSubmit={(e) => {
+              e.preventDefault();
+              upsert.mutate(form);
+            }}
+          >
+            <label className="block text-sm">
+              Name
+              <input
+                className="mt-1 block w-full rounded border px-2 py-1"
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                required
+              />
+            </label>
+            <label className="block text-sm">
+              Kind
+              <select
+                className="mt-1 block w-full rounded border px-2 py-1"
+                value={form.kind}
+                onChange={(e) =>
+                  setForm({ ...form, kind: e.target.value as "room" | "table" })
+                }
+              >
+                <option value="table">table</option>
+                <option value="room">room</option>
+              </select>
+            </label>
+            <label className="block text-sm">
+              Hourly rate (cents) — leave blank for none
+              <input
+                className="mt-1 block w-full rounded border px-2 py-1"
+                value={form.hourly_rate}
+                onChange={(e) => setForm({ ...form, hourly_rate: e.target.value })}
+                inputMode="numeric"
+              />
+            </label>
+            <label className="block text-sm">
+              Parent ID — leave blank for top-level
+              <input
+                className="mt-1 block w-full rounded border px-2 py-1"
+                value={form.parent_id}
+                onChange={(e) => setForm({ ...form, parent_id: e.target.value })}
+                inputMode="numeric"
+              />
+            </label>
+            {error && <p className="text-sm text-red-600">{error}</p>}
+            <div className="flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setForm(null);
+                  setError(null);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={upsert.isPending}>
+                Save
+              </Button>
+            </div>
+          </form>
+        )}
+      </Modal>
+    </div>
+  );
+}

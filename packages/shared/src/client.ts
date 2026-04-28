@@ -12,7 +12,7 @@ export class ApiClient {
   constructor(private opts: ApiClientOptions) {}
 
   async request<O extends z.ZodTypeAny>(
-    method: "GET" | "POST",
+    method: "GET" | "POST" | "PUT" | "DELETE",
     path: string,
     output: O,
     body?: unknown,
@@ -64,5 +64,20 @@ export class ApiClient {
     body?: unknown,
   ): Promise<z.infer<O>> {
     return this.request("POST", path, output, body);
+  }
+
+  put<O extends z.ZodTypeAny>(
+    path: string,
+    output: O,
+    body?: unknown,
+  ): Promise<z.infer<O>> {
+    return this.request("PUT", path, output, body);
+  }
+
+  delete<O extends z.ZodTypeAny>(
+    path: string,
+    output: O,
+  ): Promise<z.infer<O>> {
+    return this.request("DELETE", path, output);
   }
 }
