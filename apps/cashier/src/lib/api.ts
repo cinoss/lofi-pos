@@ -1,22 +1,7 @@
-import { ApiClient, ApiError } from "@lofi-pos/shared";
+import { createApiClient, getStoredToken, setStoredToken, TOKEN_KEY } from "@lofi-pos/pos-ui";
+import { ApiError } from "@lofi-pos/shared";
 
-export const API_BASE = "http://localhost:7878";
-export const WS_BASE = "ws://localhost:7878";
-
-export const TOKEN_KEY = "lofi-pos.token";
-
-export function getStoredToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY);
-}
-
-export function setStoredToken(token: string | null): void {
-  if (token === null) localStorage.removeItem(TOKEN_KEY);
-  else localStorage.setItem(TOKEN_KEY, token);
-}
-
-export const apiClient = new ApiClient({
-  baseUrl: API_BASE,
-  getToken: getStoredToken,
-});
-
-export { ApiError };
+const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:7878";
+export const apiClient = createApiClient({ baseUrl: API_BASE, getToken: getStoredToken });
+export { getStoredToken, setStoredToken, TOKEN_KEY, ApiError, API_BASE };
+export const WS_BASE = API_BASE.replace(/^http/, "ws");
