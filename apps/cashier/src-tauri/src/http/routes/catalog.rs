@@ -17,11 +17,35 @@ pub struct StaffOut {
     pub team: Option<String>,
 }
 
+#[derive(Debug, Serialize)]
+pub struct SettingsOut {
+    pub business_day_cutoff_hour: u32,
+    pub business_day_tz_offset_seconds: i32,
+    pub discount_threshold_pct: u32,
+    pub cancel_grace_minutes: u32,
+    pub idle_lock_minutes: u32,
+}
+
 pub fn router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/staff", get(list_staff))
         .route("/spots", get(list_spots))
         .route("/products", get(list_products))
+        .route("/settings", get(get_settings))
+}
+
+async fn get_settings(
+    State(state): State<Arc<AppState>>,
+    AuthCtx(_): AuthCtx,
+) -> Result<Json<SettingsOut>, AppErrorResponse> {
+    let s = &state.settings;
+    Ok(Json(SettingsOut {
+        business_day_cutoff_hour: s.business_day_cutoff_hour,
+        business_day_tz_offset_seconds: s.business_day_tz.local_minus_utc(),
+        discount_threshold_pct: s.discount_threshold_pct,
+        cancel_grace_minutes: s.cancel_grace_minutes,
+        idle_lock_minutes: s.idle_lock_minutes,
+    }))
 }
 
 async fn list_staff(
