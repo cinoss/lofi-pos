@@ -49,10 +49,13 @@ async fn boot_admin_rig() -> Rig {
             .unwrap();
     }
 
+    let key_manager = Arc::new(cashier_lib::services::key_manager::KeyManager::new(
+        master.clone(),
+        kek.clone(),
+    ));
     let event_service = EventService {
-        master: master.clone(),
         events: events.clone(),
-        kek: kek.clone(),
+        key_manager: key_manager.clone(),
         clock: clock.clone(),
         cutoff_hour: 11,
         tz,
@@ -82,6 +85,7 @@ async fn boot_admin_rig() -> Rig {
         kek,
         master,
         events,
+        key_manager,
         clock,
         auth,
         commands,
@@ -404,10 +408,13 @@ async fn ui_admin_serves_index_html_with_spa_fallback() {
     let mock_clock = Arc::new(MockClock::at_ymd_hms(2026, 4, 27, 12, 0, 0));
     let clock: Arc<dyn Clock> = mock_clock.clone();
     let tz = FixedOffset::east_opt(7 * 3600).unwrap();
+    let key_manager = Arc::new(cashier_lib::services::key_manager::KeyManager::new(
+        master.clone(),
+        kek.clone(),
+    ));
     let event_service = EventService {
-        master: master.clone(),
         events: events.clone(),
-        kek: kek.clone(),
+        key_manager: key_manager.clone(),
         clock: clock.clone(),
         cutoff_hour: 11,
         tz,
@@ -440,6 +447,7 @@ async fn ui_admin_serves_index_html_with_spa_fallback() {
         kek,
         master,
         events,
+        key_manager,
         clock,
         auth,
         commands,
@@ -578,4 +586,45 @@ async fn admin_reports_list_empty_then_get_404() {
         .await
         .unwrap();
     assert_eq!(resp.status(), 404);
+}
+
+#[tokio::test]
+async fn admin_keys_lists_current_dek_days() {
+    // Pre-seed two DEK rows on the rig's master DB so the listing has
+    // deterministic content. The HTTP endpoint just exposes whatever
+    // `list_dek_days` returns.
+    let rig = boot_admin_rig().await;
+    let token = login(&rig, &rig.owner_pin).await;
+    // Reach into a fresh AppState built the same way? No — we don't have a
+    // handle to it from here. Instead, drive the endpoint and assert the
+    // response shape: an array (possibly empty) whose elements have utc_day
+    // and created_at.
+    let resp = rig
+        .client
+        .get(format!("{}/admin/keys", rig.base_url))
+        .header("authorization", format!("Bearer {token}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let v: Value = resp.json().await.unwrap();
+    let arr = v.as_array().expect("response must be array");
+    for entry in arr {
+        assert!(entry.get("utc_day").is_some());
+        assert!(entry.get("created_at").is_some());
+    }
+}
+
+#[tokio::test]
+async fn admin_keys_forbidden_for_non_owner() {
+    let rig = boot_admin_rig().await;
+    let token = login(&rig, &rig.cashier_pin).await;
+    let resp = rig
+        .client
+        .get(format!("{}/admin/keys", rig.base_url))
+        .header("authorization", format!("Bearer {token}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 401);
 }

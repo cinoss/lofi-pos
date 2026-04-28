@@ -60,3 +60,14 @@ export const SettingsUpdate = z
   })
   .strict();
 export type SettingsUpdate = z.infer<typeof SettingsUpdate>;
+
+// ----------- DEK retention (GET /admin/keys) -----------
+export const DekInfo = z
+  .object({
+    utc_day: z.string(),
+    created_at: z.number().int(),
+  })
+  .strict();
+export type DekInfo = z.infer<typeof DekInfo>;
+
+export const DekInfoList = z.array(DekInfo);

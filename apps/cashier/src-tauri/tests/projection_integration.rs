@@ -17,10 +17,13 @@ fn full_session_lifecycle_replays_to_expected_state() {
     let events = Arc::new(EventStore::open_in_memory().unwrap());
     let kek = Arc::new(Kek::new_random());
     let clock = Arc::new(MockClock::at_ymd_hms(2026, 4, 27, 14, 0, 0));
+    let key_manager = Arc::new(cashier_lib::services::key_manager::KeyManager::new(
+        master.clone(),
+        kek.clone(),
+    ));
     let writer = EventService {
-        master: master.clone(),
         events: events.clone(),
-        kek: kek.clone(),
+        key_manager,
         clock: clock.clone(),
         cutoff_hour: 11,
         tz: FixedOffset::east_opt(7 * 3600).unwrap(),
@@ -179,10 +182,13 @@ fn shred_day_renders_payloads_unreadable() {
     let events = Arc::new(EventStore::open_in_memory().unwrap());
     let kek = Arc::new(Kek::new_random());
     let clock = Arc::new(MockClock::at_ymd_hms(2026, 4, 27, 14, 0, 0));
+    let key_manager = Arc::new(cashier_lib::services::key_manager::KeyManager::new(
+        master.clone(),
+        kek.clone(),
+    ));
     let writer = EventService {
-        master: master.clone(),
         events: events.clone(),
-        kek: kek.clone(),
+        key_manager,
         clock: clock.clone(),
         cutoff_hour: 11,
         tz: FixedOffset::east_opt(7 * 3600).unwrap(),
@@ -210,7 +216,7 @@ fn shred_day_renders_payloads_unreadable() {
     assert!(writer.read_decrypted(&row).is_ok());
 
     // Shred the wrapped DEK
-    assert!(master.lock().unwrap().delete_day_key("2026-04-27").unwrap());
+    assert!(master.lock().unwrap().delete_dek("2026-04-27").unwrap());
 
     // Defense-in-depth: shred = key delete, NOT row delete. The row stays
     // in events.db (audit trail intact); only its decryption is lost.

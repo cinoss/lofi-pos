@@ -64,7 +64,19 @@ pub fn spawn(state: Arc<AppState>) {
 pub fn catch_up(state: &AppState) -> crate::error::AppResult<()> {
     let cfg = current_cfg(state);
     let today = business_day_for(state.clock.now_ms(), cfg);
-    let active_days = state.master.lock().unwrap().list_active_business_days()?;
+    // NOTE: Post-UTC-rotation, `dek.utc_day` no longer corresponds 1:1 to
+    // business_day. Catch-up still uses currently-held DEK days as a coarse
+    // proxy for "days with potential activity" — any business_day not present
+    // here will simply be skipped (its events have already been crypto-shred or
+    // EOD-deleted). Acceptable until a dedicated business-day index is added.
+    let active_days: Vec<String> = state
+        .master
+        .lock()
+        .unwrap()
+        .list_dek_days()?
+        .into_iter()
+        .map(|i| i.utc_day)
+        .collect();
 
     // `list_active_business_days` returns only days with a wrapped DEK row.
     // Anything < today is a candidate. Sort ascending so we process oldest
@@ -132,7 +144,7 @@ mod tests {
             .master
             .lock()
             .unwrap()
-            .put_day_key("2020-01-01", &[0u8; 32])
+            .put_dek("2020-01-01", &[0u8; 32], 0)
             .unwrap();
         // Advance to 2026-04-30 12:00 +07 (07:00 UTC) — +71h from 07:00 UTC
         // on 2026-04-27.
@@ -168,7 +180,7 @@ mod tests {
                 .master
                 .lock()
                 .unwrap()
-                .put_day_key(&day, &[0u8; 32])
+                .put_dek(&day, &[0u8; 32], 0)
                 .unwrap();
             seeded.push(day);
         }

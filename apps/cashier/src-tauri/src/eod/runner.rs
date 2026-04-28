@@ -5,13 +5,17 @@
 //!   2. Mark `eod_runs.status='running'`.
 //!   3. Build the report (decrypt every event for the day).
 //!   4. Write report JSON to `<reports_dir>/<day>.json`.
-//!   5. In a single tx: insert/replace `daily_report`, delete `day_key`
-//!      (crypto-shred), prune old `idempotency_key` + expired
-//!      `token_denylist`, mark `eod_runs.status='ok'`.
+//!   5. In a single master tx: insert/replace `daily_report`, prune old
+//!      `idempotency_key` + expired `token_denylist`, mark
+//!      `eod_runs.status='ok'`.
+//!   6. AFTER the master tx commits: delete `event` rows for `business_day`
+//!      from events.db. Failure here is logged but does not flip eod_runs back
+//!      to 'failed' — leftover rows are encrypted with a key that the rotation
+//!      service will shred within `KEY_TTL_DAYS` regardless.
 //!
-//! After step 5 the events for that day are unreadable on disk: the wrapped
-//! DEK is gone and AES-256-GCM ciphertext without its key is irrecoverable.
-//! The `daily_report` row is the durable record.
+//! Crypto-shred is no longer EOD's job: the rotation service (`crate::rotation`)
+//! deletes wrapped DEKs older than `KEY_TTL_DAYS` UTC days, independent of any
+//! EOD outcome.
 
 use crate::app_state::AppState;
 use crate::error::{AppError, AppResult};
@@ -84,12 +88,6 @@ pub fn run_eod(state: &AppState, business_day: &str) -> AppResult<RunResult> {
                  VALUES (?1, ?2, ?3, '{}')",
                 params![business_day, started_at, order_summary],
             )?;
-            // Crypto-shred: drop the wrapped DEK. Events for this day are now
-            // irrecoverable (AES-256-GCM with the AAD bound to key_id).
-            tx.execute(
-                "DELETE FROM day_key WHERE business_day = ?1",
-                params![business_day],
-            )?;
             // Prune idempotency rows older than ~1 day. We don't store
             // business_day on idempotency_key (see master::list_idempotency_for_day),
             // so the bound is by `created_at` ms.
@@ -109,6 +107,20 @@ pub fn run_eod(state: &AppState, business_day: &str) -> AppResult<RunResult> {
             )?;
             Ok(())
         })?;
+    }
+
+    // 6) Cutoff-driven event-row deletion (events.db, separate connection).
+    //    Order: AFTER the master tx commits, so the daily_report row is durable
+    //    even if this delete fails. The DELETE itself is a single atomic
+    //    statement (sqlite implicit tx — no partial-row state). On retry, the
+    //    short-circuit on status='ok' returns early; recovery is either a
+    //    manual sweep or the natural crypto-shred when rotation prunes the DEK.
+    if let Err(e) = state.events.delete_day(business_day) {
+        tracing::error!(
+            day = %business_day,
+            err = %e,
+            "eod: event-row delete failed; daily_report committed, rotation will crypto-shred"
+        );
     }
 
     Ok(RunResult {
@@ -142,20 +154,36 @@ mod tests {
     use crate::time::Clock;
 
     #[test]
-    fn run_marks_eod_runs_ok_writes_report_deletes_day_key() {
+    fn run_marks_eod_runs_ok_writes_report_deletes_event_rows() {
         // 2026-04-27 14:00 +07 → business day 2026-04-27.
         let rig = seed_app_state_at(2026, 4, 27, 7, 0, 0);
         place_test_order(&rig);
-        // First event for the day created the wrapped DEK row.
-        assert!(day_key_exists(&rig.state, "2026-04-27"));
+        // First event for the day populated the events table.
+        assert!(rig.state.events.count_for_day("2026-04-27").unwrap() > 0);
 
         let result = run_eod(&rig.state, "2026-04-27").unwrap();
         assert_eq!(result.status, "ok");
         assert!(daily_report_exists(&rig.state, "2026-04-27"));
         assert!(rig.state.reports_dir.join("2026-04-27.json").exists());
-        // Crypto-shred: day_key gone.
-        assert!(!day_key_exists(&rig.state, "2026-04-27"));
+        // Cutoff-driven: event rows for the closed business day are gone.
+        assert_eq!(rig.state.events.count_for_day("2026-04-27").unwrap(), 0);
         assert_eq!(eod_runs_status(&rig.state, "2026-04-27"), "ok");
+    }
+
+    #[test]
+    fn run_does_not_touch_dek() {
+        // Rotation service owns the DEK lifecycle now; EOD must not delete
+        // wrapped DEKs as a side effect of closing a business day.
+        let rig = seed_app_state_at(2026, 4, 27, 7, 0, 0);
+        // Pre-seed a DEK row for today's UTC day.
+        rig.state
+            .master
+            .lock()
+            .unwrap()
+            .put_dek("2026-04-27", &[0u8; 32], 0)
+            .unwrap();
+        run_eod(&rig.state, "2026-04-27").unwrap();
+        assert!(day_key_exists(&rig.state, "2026-04-27"));
     }
 
     #[test]
@@ -166,8 +194,8 @@ mod tests {
         // Second call short-circuits on status='ok' without retrying any work.
         let again = run_eod(&rig.state, "2026-04-27").unwrap();
         assert_eq!(again.status, "ok");
-        // Still no day_key row (no double-shred attempt).
-        assert!(!day_key_exists(&rig.state, "2026-04-27"));
+        // Event rows stay deleted across the no-op repeat call.
+        assert_eq!(rig.state.events.count_for_day("2026-04-27").unwrap(), 0);
     }
 
     #[test]

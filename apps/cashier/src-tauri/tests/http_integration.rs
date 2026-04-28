@@ -53,10 +53,13 @@ async fn boot_rig() -> Rig {
             .unwrap()
     };
 
+    let key_manager = Arc::new(cashier_lib::services::key_manager::KeyManager::new(
+        master.clone(),
+        kek.clone(),
+    ));
     let event_service = EventService {
-        master: master.clone(),
         events: events.clone(),
-        kek: kek.clone(),
+        key_manager: key_manager.clone(),
         clock: clock.clone(),
         cutoff_hour: 11,
         tz,
@@ -90,6 +93,7 @@ async fn boot_rig() -> Rig {
         kek,
         master,
         events,
+        key_manager,
         clock,
         auth,
         commands,

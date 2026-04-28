@@ -46,6 +46,15 @@ pub struct Spot {
     pub status: String,
 }
 
+/// One row returned from `list_dek_days` — the UTC day a wrapped DEK exists
+/// for and when it was first written. Surfaced to operators via
+/// `GET /admin/keys`.
+#[derive(Debug, Clone, Serialize)]
+pub struct DekInfo {
+    pub utc_day: String,
+    pub created_at: i64,
+}
+
 /// Plan F: row returned from `daily_report`. The `*_json` columns are raw
 /// JSON strings (the serialized `Report` from `eod::builder`).
 #[derive(Debug, Clone, Serialize)]
@@ -104,35 +113,65 @@ impl Master {
         Ok(Self { conn })
     }
 
-    /// Insert a wrapped DEK for `business_day`. Idempotent: returns `false`
-    /// if a key already existed for that day (existing row is preserved).
-    pub fn put_day_key(&self, business_day: &str, wrapped: &[u8]) -> AppResult<bool> {
-        let n = self.conn.execute(
-            "INSERT INTO day_key(business_day, wrapped_dek, created_at) VALUES (?1, ?2, ?3)
-             ON CONFLICT(business_day) DO NOTHING",
-            params![business_day, wrapped, now_ms()],
-        )?;
-        Ok(n > 0)
-    }
-    /// Fetch the wrapped DEK for `business_day`, if any.
-    pub fn get_day_key(&self, business_day: &str) -> AppResult<Option<Vec<u8>>> {
+    /// Fetch the wrapped DEK for the given UTC calendar day, if any.
+    pub fn get_dek(&self, utc_day: &str) -> AppResult<Option<Vec<u8>>> {
         Ok(self
             .conn
             .query_row(
-                "SELECT wrapped_dek FROM day_key WHERE business_day = ?1",
-                params![business_day],
+                "SELECT wrapped_dek FROM dek WHERE utc_day = ?1",
+                params![utc_day],
                 |r| r.get::<_, Vec<u8>>(0),
             )
             .optional()?)
     }
-    /// Crypto-shred `business_day` by removing its wrapped DEK. Returns
-    /// `false` if the row was already absent.
-    pub fn delete_day_key(&self, business_day: &str) -> AppResult<bool> {
+    /// Insert a wrapped DEK for `utc_day`. Idempotent: returns `false` on
+    /// conflict (existing row preserved). `now_ms` is recorded as `created_at`.
+    pub fn put_dek(&self, utc_day: &str, wrapped: &[u8], now_ms: i64) -> AppResult<bool> {
         let n = self.conn.execute(
-            "DELETE FROM day_key WHERE business_day = ?1",
-            params![business_day],
+            "INSERT OR IGNORE INTO dek(utc_day, wrapped_dek, created_at) VALUES (?1, ?2, ?3)",
+            params![utc_day, wrapped, now_ms],
         )?;
+        Ok(n == 1)
+    }
+    /// Crypto-shred a UTC day by removing its wrapped DEK. Returns `false` if
+    /// the row was already absent.
+    pub fn delete_dek(&self, utc_day: &str) -> AppResult<bool> {
+        let n = self
+            .conn
+            .execute("DELETE FROM dek WHERE utc_day = ?1", params![utc_day])?;
         Ok(n > 0)
+    }
+    /// List all currently-held DEK rows in descending utc_day order. Used by
+    /// the Owner-only `GET /admin/keys` endpoint for ops visibility.
+    pub fn list_dek_days(&self) -> AppResult<Vec<DekInfo>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT utc_day, created_at FROM dek ORDER BY utc_day DESC")?;
+        let rows = stmt
+            .query_map([], |r| {
+                Ok(DekInfo {
+                    utc_day: r.get(0)?,
+                    created_at: r.get(1)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+    /// Delete every DEK whose `utc_day < oldest_keep`. Returns the list of
+    /// deleted utc_day strings (for logging by the rotation scheduler).
+    pub fn delete_deks_older_than(&self, oldest_keep: &str) -> AppResult<Vec<String>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT utc_day FROM dek WHERE utc_day < ?1 ORDER BY utc_day ASC")?;
+        let to_delete: Vec<String> = stmt
+            .query_map(params![oldest_keep], |r| r.get::<_, String>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        drop(stmt);
+        for d in &to_delete {
+            self.conn
+                .execute("DELETE FROM dek WHERE utc_day = ?1", params![d])?;
+        }
+        Ok(to_delete)
     }
     /// Read a key/value pair from the `setting` table.
     pub fn get_setting(&self, key: &str) -> AppResult<Option<String>> {
@@ -467,19 +506,6 @@ impl Master {
             .unwrap_or(false))
     }
 
-    /// Business days that have a wrapped DEK row — i.e., days for which
-    /// events may still be encrypted on disk. Used by warm-up to derive
-    /// every DEK in advance.
-    pub fn list_active_business_days(&self) -> AppResult<Vec<String>> {
-        let mut stmt = self
-            .conn
-            .prepare("SELECT business_day FROM day_key ORDER BY business_day ASC")?;
-        let days = stmt
-            .query_map([], |r| r.get::<_, String>(0))?
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(days)
-    }
-
     /// Plan F: read a `daily_report` row by `business_day`.
     pub fn get_daily_report(&self, business_day: &str) -> AppResult<Option<DailyReportRow>> {
         Ok(self
@@ -643,22 +669,58 @@ mod tests {
     }
 
     #[test]
-    fn day_key_put_get_delete() {
+    fn dek_put_then_get_round_trips() {
         let m = Master::open_in_memory().unwrap();
-        assert!(m.get_day_key("2026-04-27").unwrap().is_none());
-        assert!(m.put_day_key("2026-04-27", &[1, 2, 3]).unwrap());
-        assert_eq!(m.get_day_key("2026-04-27").unwrap(), Some(vec![1, 2, 3]));
-        assert!(m.delete_day_key("2026-04-27").unwrap());
-        assert!(m.get_day_key("2026-04-27").unwrap().is_none());
-        assert!(!m.delete_day_key("2026-04-27").unwrap()); // already gone
+        assert!(m.get_dek("2026-04-28").unwrap().is_none());
+        assert!(m.put_dek("2026-04-28", &[1, 2, 3], 1_000).unwrap());
+        assert_eq!(m.get_dek("2026-04-28").unwrap(), Some(vec![1, 2, 3]));
+        assert!(m.delete_dek("2026-04-28").unwrap());
+        assert!(m.get_dek("2026-04-28").unwrap().is_none());
+        assert!(!m.delete_dek("2026-04-28").unwrap());
     }
 
     #[test]
-    fn day_key_put_is_idempotent() {
+    fn put_dek_returns_false_on_conflict() {
         let m = Master::open_in_memory().unwrap();
-        assert!(m.put_day_key("d", &[1]).unwrap());
-        assert!(!m.put_day_key("d", &[2, 2]).unwrap());
-        assert_eq!(m.get_day_key("d").unwrap(), Some(vec![1]));
+        assert!(m.put_dek("2026-04-28", &[1], 1).unwrap());
+        // Second insert same day: original row preserved.
+        assert!(!m.put_dek("2026-04-28", &[2, 2], 2).unwrap());
+        assert_eq!(m.get_dek("2026-04-28").unwrap(), Some(vec![1]));
+    }
+
+    #[test]
+    fn delete_deks_older_than_returns_deleted_days() {
+        let m = Master::open_in_memory().unwrap();
+        for d in &[
+            "2026-04-25",
+            "2026-04-26",
+            "2026-04-27",
+            "2026-04-28",
+            "2026-04-29",
+        ] {
+            m.put_dek(d, &[0], 1).unwrap();
+        }
+        let deleted = m.delete_deks_older_than("2026-04-27").unwrap();
+        assert_eq!(deleted, vec!["2026-04-25", "2026-04-26"]);
+        let remaining: Vec<String> = m
+            .list_dek_days()
+            .unwrap()
+            .into_iter()
+            .map(|r| r.utc_day)
+            .collect();
+        assert_eq!(remaining, vec!["2026-04-29", "2026-04-28", "2026-04-27"]);
+    }
+
+    #[test]
+    fn list_dek_days_returns_desc_order() {
+        let m = Master::open_in_memory().unwrap();
+        m.put_dek("2026-04-26", &[0], 100).unwrap();
+        m.put_dek("2026-04-28", &[0], 300).unwrap();
+        m.put_dek("2026-04-27", &[0], 200).unwrap();
+        let info = m.list_dek_days().unwrap();
+        let days: Vec<&str> = info.iter().map(|i| i.utc_day.as_str()).collect();
+        assert_eq!(days, vec!["2026-04-28", "2026-04-27", "2026-04-26"]);
+        assert_eq!(info[0].created_at, 300);
     }
 
     #[test]
@@ -689,15 +751,6 @@ mod tests {
         });
         assert!(r.is_err());
         assert!(m.get_setting("tx_rollback").unwrap().is_none());
-    }
-
-    #[test]
-    fn list_active_business_days_returns_day_key_dates() {
-        let m = Master::open_in_memory().unwrap();
-        m.put_day_key("2026-04-27", &[1]).unwrap();
-        m.put_day_key("2026-04-28", &[2]).unwrap();
-        let days = m.list_active_business_days().unwrap();
-        assert_eq!(days, vec!["2026-04-27", "2026-04-28"]);
     }
 
     #[test]

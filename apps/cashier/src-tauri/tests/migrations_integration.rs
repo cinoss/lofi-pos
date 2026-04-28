@@ -35,7 +35,7 @@ fn expected_tables_exist_after_migration() {
         "product",
         "recipe",
         "setting",
-        "day_key",
+        "dek",
         "daily_report",
         "idempotency_key",
         "token_denylist",

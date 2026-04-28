@@ -2,6 +2,7 @@ use crate::auth::AuthService;
 use crate::crypto::Kek;
 use crate::error::{AppError, AppResult};
 use crate::services::command_service::CommandService;
+use crate::services::key_manager::KeyManager;
 use crate::store::aggregate_store::AggregateStore;
 use crate::store::events::EventStore;
 use crate::store::master::Master;
@@ -70,6 +71,10 @@ pub struct AppState {
     pub kek: Arc<Kek>,
     pub master: Arc<Mutex<Master>>,
     pub events: Arc<EventStore>,
+    /// UTC-day-keyed DEK lifecycle owner. Shared between `EventService` (which
+    /// fetches `current_dek` per write) and `rotation::scheduler` (which calls
+    /// `rotate` at every UTC midnight).
+    pub key_manager: Arc<KeyManager>,
     pub clock: Arc<dyn Clock>,
     pub auth: AuthService,
     pub commands: CommandService,

@@ -11,6 +11,7 @@ pub mod error;
 pub mod http;
 pub mod keychain;
 pub mod print;
+pub mod rotation;
 pub mod services;
 pub mod store;
 pub mod time;
@@ -44,10 +45,14 @@ pub fn run() {
             // Load TZ + cutoff from settings
             let (cutoff_hour, tz) = load_business_day_settings(&master.lock().unwrap())?;
 
+            let key_manager = Arc::new(services::key_manager::KeyManager::new(
+                master.clone(),
+                kek.clone(),
+            ));
+
             let event_service = services::event_service::EventService {
-                master: master.clone(),
                 events: events.clone(),
-                kek: kek.clone(),
+                key_manager: key_manager.clone(),
                 clock: clock.clone(),
                 cutoff_hour,
                 tz,
@@ -114,6 +119,7 @@ pub fn run() {
                 kek,
                 master,
                 events,
+                key_manager,
                 clock,
                 auth,
                 commands: commands_svc,
@@ -139,6 +145,10 @@ pub fn run() {
             // Plan F: spawn the EOD scheduler on the same runtime. Performs
             // startup catch-up immediately, then loops on next_cutoff.
             eod::scheduler::spawn(app_state.clone());
+
+            // UTC key rotation scheduler. Independent of EOD: ensures today's
+            // DEK exists and prunes any DEK older than 3 UTC days.
+            rotation::spawn(app_state.clone());
 
             Ok(())
         })

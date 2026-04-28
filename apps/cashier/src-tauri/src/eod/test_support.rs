@@ -57,10 +57,13 @@ pub fn seed_app_state_at(y: i32, m: u32, d: u32, h: u32, mi: u32, s: u32) -> Eod
     let mock_clock = Arc::new(MockClock::at_ymd_hms(y, m, d, h, mi, s));
     let clock: Arc<dyn Clock> = mock_clock.clone();
 
+    let key_manager = Arc::new(crate::services::key_manager::KeyManager::new(
+        master.clone(),
+        kek.clone(),
+    ));
     let event_service = EventService {
-        master: master.clone(),
         events: events.clone(),
-        kek: kek.clone(),
+        key_manager: key_manager.clone(),
         clock: clock.clone(),
         cutoff_hour: TEST_CUTOFF,
         tz: FixedOffset::east_opt(TEST_TZ_SECONDS).unwrap(),
@@ -106,6 +109,7 @@ pub fn seed_app_state_at(y: i32, m: u32, d: u32, h: u32, mi: u32, s: u32) -> Eod
         kek,
         master,
         events,
+        key_manager,
         clock,
         auth,
         commands,
@@ -241,7 +245,7 @@ pub fn day_key_exists(state: &AppState, day: &str) -> bool {
         .master
         .lock()
         .unwrap()
-        .get_day_key(day)
+        .get_dek(day)
         .unwrap()
         .is_some()
 }
