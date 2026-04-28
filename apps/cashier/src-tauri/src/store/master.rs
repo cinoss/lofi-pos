@@ -193,6 +193,43 @@ impl Master {
             .optional()?)
     }
 
+    /// Update mutable fields on an existing staff row. Any of name/pin_hash/role/team
+    /// may be `None` to leave that field untouched. Returns true on hit.
+    pub fn update_staff(
+        &self,
+        id: i64,
+        name: Option<&str>,
+        pin_hash: Option<&str>,
+        role: Option<Role>,
+        team: Option<Option<&str>>,
+    ) -> AppResult<bool> {
+        // Defensive: read existing row, fold optional updates, write back.
+        let existing = match self.get_staff(id)? {
+            Some(s) => s,
+            None => return Ok(false),
+        };
+        let new_name = name.unwrap_or(&existing.name);
+        let new_pin = pin_hash.unwrap_or(&existing.pin_hash);
+        let new_role = role.unwrap_or(existing.role);
+        let new_team_owned: Option<String> = match team {
+            Some(t) => t.map(|s| s.to_string()),
+            None => existing.team,
+        };
+        let n = self.conn.execute(
+            "UPDATE staff SET name = ?1, pin_hash = ?2, role = ?3, team = ?4 WHERE id = ?5",
+            params![new_name, new_pin, new_role.as_str(), new_team_owned, id],
+        )?;
+        Ok(n > 0)
+    }
+
+    /// Delete a staff row.
+    pub fn delete_staff(&self, id: i64) -> AppResult<bool> {
+        let n = self
+            .conn
+            .execute("DELETE FROM staff WHERE id = ?1", params![id])?;
+        Ok(n > 0)
+    }
+
     /// List all staff, ordered by id.
     pub fn list_staff(&self) -> AppResult<Vec<Staff>> {
         let mut stmt = self
@@ -235,6 +272,37 @@ impl Master {
                 row_to_spot,
             )
             .optional()?)
+    }
+
+    /// Update fields on an existing spot. Returns true on hit.
+    pub fn update_spot(
+        &self,
+        id: i64,
+        name: &str,
+        kind: SpotKind,
+        hourly_rate: Option<i64>,
+        parent_id: Option<i64>,
+    ) -> AppResult<bool> {
+        if kind == SpotKind::Table && hourly_rate.is_some() {
+            return Err(AppError::Validation("table cannot have hourly_rate".into()));
+        }
+        if kind == SpotKind::Room && hourly_rate.is_none() {
+            return Err(AppError::Validation("room must have hourly_rate".into()));
+        }
+        let n = self.conn.execute(
+            "UPDATE spot SET name = ?1, kind = ?2, hourly_rate = ?3, parent_id = ?4
+             WHERE id = ?5",
+            params![name, kind.as_str(), hourly_rate, parent_id, id],
+        )?;
+        Ok(n > 0)
+    }
+
+    /// Delete a spot row. Returns true if a row was removed.
+    pub fn delete_spot(&self, id: i64) -> AppResult<bool> {
+        let n = self
+            .conn
+            .execute("DELETE FROM spot WHERE id = ?1", params![id])?;
+        Ok(n > 0)
     }
 
     /// List all spots, ordered by id.
@@ -290,6 +358,39 @@ impl Master {
             })?
             .collect::<Result<Vec<_>, _>>()?;
         Ok(rows)
+    }
+
+    /// Insert a product row. Returns the new id.
+    pub fn create_product(&self, name: &str, price: i64, route: &str, kind: &str) -> AppResult<i64> {
+        self.conn.execute(
+            "INSERT INTO product(name, price, route, kind) VALUES (?1, ?2, ?3, ?4)",
+            params![name, price, route, kind],
+        )?;
+        Ok(self.conn.last_insert_rowid())
+    }
+
+    /// Update mutable fields on an existing product row. Returns true on hit.
+    pub fn update_product(
+        &self,
+        id: i64,
+        name: &str,
+        price: i64,
+        route: &str,
+        kind: &str,
+    ) -> AppResult<bool> {
+        let n = self.conn.execute(
+            "UPDATE product SET name = ?1, price = ?2, route = ?3, kind = ?4 WHERE id = ?5",
+            params![name, price, route, kind, id],
+        )?;
+        Ok(n > 0)
+    }
+
+    /// Delete a product row.
+    pub fn delete_product(&self, id: i64) -> AppResult<bool> {
+        let n = self
+            .conn
+            .execute("DELETE FROM product WHERE id = ?1", params![id])?;
+        Ok(n > 0)
     }
 
     /// List all products, ordered by id.
