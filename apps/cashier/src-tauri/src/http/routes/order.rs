@@ -6,7 +6,7 @@ use crate::error::{AppError, AppResult};
 use crate::http::auth_layer::AuthCtx;
 use crate::http::error_layer::AppErrorResponse;
 use axum::extract::{Path, State};
-use axum::routing::post;
+use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::Deserialize;
 use std::sync::Arc;
@@ -47,8 +47,24 @@ pub struct ReturnOrderItemInput {
 pub fn router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/orders", post(place_order))
+        .route("/orders/:order_id", get(get_order))
         .route("/orders/:order_id/items/:idx/cancel", post(cancel_item))
         .route("/orders/:order_id/items/:idx/return", post(return_item))
+}
+
+async fn get_order(
+    State(state): State<Arc<AppState>>,
+    AuthCtx(_claims): AuthCtx,
+    Path(order_id): Path<String>,
+) -> Result<Json<OrderState>, AppErrorResponse> {
+    let s = state.clone();
+    let r = tokio::task::spawn_blocking(move || -> Result<OrderState, AppError> {
+        s.commands.load_order(&order_id)?.ok_or(AppError::NotFound)
+    })
+    .await
+    .map_err(|e| AppErrorResponse(AppError::Internal(format!("join: {e}"))))?
+    .map_err(AppErrorResponse)?;
+    Ok(Json(r))
 }
 
 fn parse_route(s: &str) -> AppResult<Route> {
