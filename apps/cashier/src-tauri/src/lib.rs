@@ -5,6 +5,7 @@ pub mod bootstrap;
 pub mod business_day;
 pub mod crypto;
 pub mod domain;
+pub mod eod;
 pub mod error;
 pub mod http;
 pub mod keychain;
