@@ -1,7 +1,7 @@
-import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import { useMutation, useQuery, useQueries } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
-import { SessionState } from "@lofi-pos/shared";
+import { SessionState, OrderState } from "@lofi-pos/shared";
 import type { TakePaymentInput } from "@lofi-pos/shared";
 import { apiClient, ApiError } from "../lib/api";
 import { Button } from "@lofi-pos/ui/components/button";
@@ -12,7 +12,42 @@ export function PaymentRoute() {
   const sessionId = id!;
   const nav = useNavigate();
 
+  const { data: session } = useQuery({
+    queryKey: ["session", sessionId],
+    queryFn: () => apiClient.get(`/sessions/${sessionId}`, SessionState),
+  });
+
+  const orderQueries = useQueries({
+    queries: (session?.order_ids ?? []).map((oid) => ({
+      queryKey: ["order", oid],
+      queryFn: () => apiClient.get(`/orders/${oid}`, OrderState),
+      enabled: !!session,
+    })),
+  });
+
+  const orders = orderQueries
+    .map((q) => q.data)
+    .filter((o): o is NonNullable<typeof o> => !!o);
+
+  const computedSubtotal = orders.reduce((sum, o) => {
+    return (
+      sum +
+      o.items.reduce((s, it) => {
+        if (it.cancelled) return s;
+        const netQty = Math.max(0, it.spec.qty - it.returned_qty);
+        return s + netQty * it.spec.unit_price;
+      }, 0)
+    );
+  }, 0);
+
   const [subtotal, setSubtotal] = useState(0);
+  // Default subtotal once the live computed value lands. Don't overwrite if
+  // the cashier has already typed a value.
+  useEffect(() => {
+    if (subtotal === 0 && computedSubtotal > 0) setSubtotal(computedSubtotal);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [computedSubtotal]);
+
   const [discountPct, setDiscountPct] = useState(0);
   const [vatPct, setVatPct] = useState(8);
   const [method, setMethod] = useState("cash");

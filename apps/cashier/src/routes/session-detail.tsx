@@ -1,4 +1,9 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  useQuery,
+  useQueries,
+  useMutation,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
 import { z } from "zod";
 import { useState } from "react";
@@ -26,6 +31,29 @@ export function SessionDetailRoute() {
     queryKey: ["products"],
     queryFn: () => apiClient.get("/products", z.array(Product)),
   });
+
+  const orderQueries = useQueries({
+    queries: (session?.order_ids ?? []).map((oid) => ({
+      queryKey: ["order", oid],
+      queryFn: () => apiClient.get(`/orders/${oid}`, OrderState),
+      enabled: !!session,
+    })),
+  });
+
+  const orders = orderQueries
+    .map((q) => q.data)
+    .filter((o): o is NonNullable<typeof o> => !!o);
+
+  const liveSubtotal = orders.reduce((sum, o) => {
+    return (
+      sum +
+      o.items.reduce((s, it) => {
+        if (it.cancelled) return s;
+        const netQty = Math.max(0, it.spec.qty - it.returned_qty);
+        return s + netQty * it.spec.unit_price;
+      }, 0)
+    );
+  }, 0);
 
   // Stable idempotency keys per user intent.
   // - placeKey: tied to current cart batch; rotated on successful place-order
@@ -88,11 +116,35 @@ export function SessionDetailRoute() {
           {session.order_ids.length === 0 ? (
             <p className="text-gray-500 text-sm">No orders placed yet.</p>
           ) : (
-            <ul className="text-sm text-gray-700">
-              {session.order_ids.map((oid) => (
-                <li key={oid}>· {oid.slice(0, 8)}…</li>
-              ))}
-            </ul>
+            <>
+              <ul className="text-sm">
+                {orders.flatMap((o) =>
+                  o.items.map((it, i) => (
+                    <li
+                      key={`${o.order_id}-${i}`}
+                      className={
+                        it.cancelled
+                          ? "line-through text-gray-400"
+                          : "text-gray-700"
+                      }
+                    >
+                      {it.spec.qty}× {it.spec.product_name}
+                      {it.returned_qty > 0 &&
+                        ` (${it.returned_qty} returned)`}
+                      <span className="float-right">
+                        {(it.spec.qty * it.spec.unit_price).toLocaleString(
+                          "vi-VN",
+                        )}
+                        đ
+                      </span>
+                    </li>
+                  )),
+                )}
+              </ul>
+              <div className="mt-2 pt-2 border-t font-semibold">
+                Subtotal: {liveSubtotal.toLocaleString("vi-VN")}đ
+              </div>
+            </>
           )}
         </div>
 
