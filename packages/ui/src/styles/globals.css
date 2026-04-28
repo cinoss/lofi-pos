@@ -1,12 +1,18 @@
 @import "tailwindcss";
 @import "tw-animate-css";
-@import "shadcn/tailwind.css";
 @import "@fontsource-variable/oxanium";
 
 @custom-variant dark (&:is(.dark *));
-@source "../../../apps/**/*.{ts,tsx}";
-@source "../../../components/**/*.{ts,tsx}";
-@source "../**/*.{ts,tsx}";
+
+/* @source paths are relative to THIS file: packages/ui/src/styles/globals.css
+   - 1 up: packages/ui/src/
+   - 2 up: packages/ui/
+   - 3 up: packages/
+   - 4 up: <repo root>
+*/
+@source "../../../../apps/cashier/src/**/*.{ts,tsx}";
+@source "../../../../apps/web/src/**/*.{ts,tsx}";
+@source "../../../../packages/ui/src/**/*.{ts,tsx}";
 
 @theme inline {
     --font-heading: var(--font-sans);
