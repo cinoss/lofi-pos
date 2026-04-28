@@ -1,13 +1,14 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueries } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
-import { SessionState, OrderState } from "@lofi-pos/shared";
+import { SessionState, OrderState, ApiError } from "@lofi-pos/shared";
 import type { TakePaymentInput } from "@lofi-pos/shared";
-import { apiClient, ApiError } from "../lib/api";
 import { Button } from "@lofi-pos/ui/components/button";
-import { OverrideModal } from "@lofi-pos/pos-ui";
+import { OverrideModal } from "../components/override-modal";
+import { useApiClient } from "../api-context";
 
 export function PaymentRoute() {
+  const apiClient = useApiClient();
   const { id } = useParams<{ id: string }>();
   const sessionId = id!;
   const nav = useNavigate();
@@ -52,9 +53,7 @@ export function PaymentRoute() {
   const [vatPct, setVatPct] = useState(8);
   const [method, setMethod] = useState("cash");
 
-  // Stable idempotency key per form intent. Generated once when the form
-  // mounts; reused across retries (network blip, override flow). On success
-  // we navigate away, so the key is naturally discarded with the component.
+  // Stable idempotency key per form intent.
   const [idempotencyKey] = useState(() => crypto.randomUUID());
 
   const total = Math.round(

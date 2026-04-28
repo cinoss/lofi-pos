@@ -1,11 +1,14 @@
 import { Navigate, Route, Routes } from "react-router-dom";
-import { useAuth, AppShell } from "@lofi-pos/pos-ui";
-import { LoginRoute } from "./routes/login";
-import { LockRoute } from "./routes/lock";
-import { SessionsRoute } from "./routes/sessions";
-import { SpotPickerRoute } from "./routes/spot-picker";
-import { SessionDetailRoute } from "./routes/session-detail";
-import { PaymentRoute } from "./routes/payment";
+import {
+  useAuth,
+  AppShell,
+  LoginRoute,
+  LockRoute,
+  SessionsRoute,
+  SpotPickerRoute,
+  SessionDetailRoute,
+  PaymentRoute,
+} from "@lofi-pos/pos-ui";
 
 export default function App() {
   const { isAuthenticated, isLocked, token } = useAuth();

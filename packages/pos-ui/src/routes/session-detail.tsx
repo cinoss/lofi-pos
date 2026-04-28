@@ -7,16 +7,17 @@ import {
 import { useNavigate, useParams } from "react-router-dom";
 import { z } from "zod";
 import { useState } from "react";
-import { SessionState, OrderState, Product } from "@lofi-pos/shared";
+import { SessionState, OrderState, Product, ApiError } from "@lofi-pos/shared";
 import type {
   PlaceOrderInput,
   RawOrderItem,
   CloseSessionInput,
 } from "@lofi-pos/shared";
-import { apiClient, ApiError } from "../lib/api";
 import { Button } from "@lofi-pos/ui/components/button";
+import { useApiClient } from "../api-context";
 
 export function SessionDetailRoute() {
+  const apiClient = useApiClient();
   const { id } = useParams<{ id: string }>();
   const sessionId = id!;
   const qc = useQueryClient();
