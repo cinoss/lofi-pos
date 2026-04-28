@@ -210,7 +210,7 @@ fn shred_day_renders_payloads_unreadable() {
     assert!(writer.read_decrypted(&row).is_ok());
 
     // Shred the wrapped DEK
-    assert!(master.lock().unwrap().delete_day_key("2026-04-27").unwrap());
+    assert!(master.lock().unwrap().delete_dek("2026-04-27").unwrap());
 
     // Defense-in-depth: shred = key delete, NOT row delete. The row stays
     // in events.db (audit trail intact); only its decryption is lost.

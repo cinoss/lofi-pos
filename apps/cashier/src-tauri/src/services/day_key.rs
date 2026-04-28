@@ -9,18 +9,18 @@ use crate::store::master::Master;
 /// caller's `put_day_key` returns false and they fall through to read the
 /// row that the first caller wrote.
 pub fn get_or_create(master: &Master, kek: &Kek, business_day: &str) -> AppResult<Dek> {
-    if let Some(wrapped) = master.get_day_key(business_day)? {
+    if let Some(wrapped) = master.get_dek(business_day)? {
         return kek.unwrap(&wrapped);
     }
     let dek = Dek::new_random();
     let wrapped = kek.wrap(&dek)?;
-    let inserted = master.put_day_key(business_day, &wrapped)?;
+    let inserted = master.put_dek(business_day, &wrapped, 0)?;
     if inserted {
         Ok(dek)
     } else {
         // Lost the race; another caller wrote first. Read theirs.
         let stored = master
-            .get_day_key(business_day)?
+            .get_dek(business_day)?
             .ok_or(crate::error::AppError::NotFound)?;
         kek.unwrap(&stored)
     }
@@ -35,7 +35,7 @@ mod tests {
         let m = Master::open_in_memory().unwrap();
         let kek = Kek::new_random();
         let dek1 = get_or_create(&m, &kek, "2026-04-27").unwrap();
-        let stored = m.get_day_key("2026-04-27").unwrap().unwrap();
+        let stored = m.get_dek("2026-04-27").unwrap().unwrap();
         let dek2 = kek.unwrap(&stored).unwrap();
         assert_eq!(dek1.as_bytes(), dek2.as_bytes());
     }

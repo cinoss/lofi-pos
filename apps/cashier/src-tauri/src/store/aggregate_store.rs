@@ -67,11 +67,18 @@ impl AggregateStore {
         tz: FixedOffset,
         cutoff_hour: u32,
     ) -> AppResult<WarmUpStats> {
-        // Step 1: derive DEKs for every retained day.
-        let active_days = master.list_active_business_days()?;
+        // Step 1: derive DEKs for every retained UTC day. After the UTC key
+        // rotation refactor, `event.key_id` stores `utc_day_of(ts)` (decoupled
+        // from `business_day`), and DEKs live in the `dek` table keyed by UTC
+        // day. Warm-up just needs every currently-held key.
+        let active_days: Vec<String> = master
+            .list_dek_days()?
+            .into_iter()
+            .map(|i| i.utc_day)
+            .collect();
         let mut deks: HashMap<String, Dek> = HashMap::new();
         for day in &active_days {
-            if let Some(wrapped) = master.get_day_key(day)? {
+            if let Some(wrapped) = master.get_dek(day)? {
                 deks.insert(day.clone(), kek.unwrap(&wrapped)?);
             }
         }

@@ -80,7 +80,7 @@ impl EventService {
         let wrapped = {
             let master = self.master.lock().unwrap();
             master
-                .get_day_key(&row.key_id)?
+                .get_dek(&row.key_id)?
                 .ok_or(crate::error::AppError::NotFound)?
         };
         let dek = self.kek.unwrap(&wrapped)?;

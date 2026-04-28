@@ -241,7 +241,7 @@ pub fn day_key_exists(state: &AppState, day: &str) -> bool {
         .master
         .lock()
         .unwrap()
-        .get_day_key(day)
+        .get_dek(day)
         .unwrap()
         .is_some()
 }
