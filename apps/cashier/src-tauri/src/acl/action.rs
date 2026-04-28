@@ -36,4 +36,6 @@ pub enum Action {
     EditSettings,
     /// Plan F: spot CRUD (rooms + tables) — Owner-only.
     SpotEdit,
+    /// UTC key rotation: GET /admin/keys (list current DEK retention) — Owner-only.
+    ViewKeys,
 }
