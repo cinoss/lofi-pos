@@ -1,12 +1,6 @@
 # UTC Key Rotation — Design
 
-**Status: SUPERSEDED.** This spec assumed in-process key rotation. The actual direction is a **remote key service exposed as a Tor hidden service**, with the cashier connecting via `arti`. See `2026-04-29-key-service-*-design.md` for the replacement specs (server first, then client).
-
-The content below is preserved only to record the local-only model that was considered and rejected.
-
----
-
-**Status (original):** Draft. The phrase "leave behind .onion we need arti" from the original brief is unresolved — see Open Questions. The design below assumes it is unrelated to the cryptographic work and can be addressed in a separate spec if it turns out to mean Tor (`arti`) hidden-service exposure.
+**Status:** Active. A remote-Tor variant was briefly considered and rejected (kills local-first; weaker crypto-shred in practice; centralizes risk; Tor blocking/latency/recovery cost). All stated requirements (Cloak-style key tagging, UTC daily rotation, 3-day retention, cutoff-driven data cleanup) are met locally. The design below assumes it is unrelated to the cryptographic work and can be addressed in a separate spec if it turns out to mean Tor (`arti`) hidden-service exposure.
 
 **Goal:** Decouple data-encryption-key (DEK) lifecycle from the business-day cutoff. Run a key rotation service that produces one DEK per **UTC calendar day** and retains the most recent **3** keys; older keys are deleted (crypto-shred). Data lifecycle (reports, on-disk event row deletion) continues to be driven by the **business-day cutoff** and remains owned by the EOD pipeline.
 
