@@ -5,18 +5,12 @@ import { BrowserRouter } from "react-router-dom";
 import "./index.css";
 import App from "./App";
 import { AuthProvider } from "./lib/auth-context";
-import { attachWS } from "./lib/ws";
 
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: { staleTime: 1000, refetchOnWindowFocus: false },
   },
 });
-
-// Attach WS once the app boots; StrictMode runs effects twice in dev so we
-// gate at module scope (single attachment for the lifetime of the page).
-let teardownWS: (() => void) | null = null;
-if (!teardownWS) teardownWS = attachWS(queryClient);
 
 const root = document.getElementById("root")!;
 ReactDOM.createRoot(root).render(

@@ -8,9 +8,11 @@ import {
 } from "react";
 import type { ReactNode } from "react";
 import { z } from "zod";
+import { useQueryClient } from "@tanstack/react-query";
 import { LoginOutput, TokenClaims } from "@lofi-pos/shared";
 import type { TokenClaims as TokenClaimsType } from "@lofi-pos/shared";
 import { apiClient, getStoredToken, setStoredToken } from "./api";
+import { attachWS } from "./ws";
 
 interface AuthContextValue {
   token: string | null;
@@ -29,6 +31,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(getStoredToken());
   const [claims, setClaims] = useState<TokenClaimsType | null>(null);
   const [isLocked, setIsLocked] = useState(false);
+  const qc = useQueryClient();
+
+  // Attach the WS subscription whenever we have a token; teardown when token clears
+  // or rotates. Prevents the "live updates dead until reload" bug where attachWS
+  // ran at module load with token=null.
+  useEffect(() => {
+    if (!token) return;
+    const teardown = attachWS(qc);
+    return teardown;
+  }, [token, qc]);
 
   // On mount, if token exists, try /auth/me to recover claims.
   useEffect(() => {
