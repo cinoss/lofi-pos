@@ -8,6 +8,7 @@ interface PinPadProps {
   error?: string | null;
   disabled?: boolean;
   title?: string;
+  size?: "default" | "touch";
 }
 
 const KEYS: Array<string | "back" | "submit"> = [
@@ -30,6 +31,7 @@ export function PinPad({
   error,
   disabled,
   title = "Enter PIN",
+  size = "default",
 }: PinPadProps) {
   const [pin, setPin] = useState("");
 
@@ -41,9 +43,13 @@ export function PinPad({
     } else if (pin.length < 12) setPin((p) => p + k);
   };
 
+  const buttonClass =
+    size === "touch" ? "h-24 w-28 text-2xl" : "h-16 w-20 text-xl";
+  const titleClass = size === "touch" ? "text-3xl" : "text-2xl";
+
   return (
     <div className="flex flex-col items-center gap-4 p-6">
-      <h2 className="text-2xl font-semibold">{title}</h2>
+      <h2 className={`${titleClass} font-semibold`}>{title}</h2>
       <div className="text-3xl tracking-[0.5em] font-mono h-12">
         {pin.replace(/./g, "•") || (
           <span className="text-gray-400">______</span>
@@ -58,7 +64,7 @@ export function PinPad({
               k === "submit" ? "default" : k === "back" ? "outline" : "secondary"
             }
             size="lg"
-            className="h-16 w-20 text-xl"
+            className={buttonClass}
             onClick={() => press(k)}
             disabled={disabled || (k === "submit" && pin.length < MIN_PIN_LEN)}
           >

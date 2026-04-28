@@ -5,7 +5,7 @@ import { SessionState, OrderState } from "@lofi-pos/shared";
 import type { TakePaymentInput } from "@lofi-pos/shared";
 import { apiClient, ApiError } from "../lib/api";
 import { Button } from "@lofi-pos/ui/components/button";
-import { OverrideModal } from "../components/override-modal";
+import { OverrideModal } from "@lofi-pos/pos-ui";
 
 export function PaymentRoute() {
   const { id } = useParams<{ id: string }>();

@@ -1,6 +1,5 @@
 import { Navigate, Route, Routes } from "react-router-dom";
-import { useAuth } from "@lofi-pos/pos-ui";
-import { AppShell } from "./components/app-shell";
+import { useAuth, AppShell } from "@lofi-pos/pos-ui";
 import { LoginRoute } from "./routes/login";
 import { LockRoute } from "./routes/lock";
 import { SessionsRoute } from "./routes/sessions";

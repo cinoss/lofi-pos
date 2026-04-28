@@ -1,6 +1,9 @@
 import { Link, Outlet } from "react-router-dom";
 import { Button } from "@lofi-pos/ui/components/button";
-import { useAuth, useSettings, useIdleTimer } from "@lofi-pos/pos-ui";
+import { useAuth } from "../auth-context";
+import { useSettings } from "../settings-context";
+import { useIdleTimer } from "../idle-tracker";
+import { ConnectionStatus } from "./connection-status";
 
 export function AppShell() {
   const { claims, lock, logout } = useAuth();
@@ -21,6 +24,7 @@ export function AppShell() {
           <Link to="/spots" className="text-sm hover:underline">
             Open New
           </Link>
+          <ConnectionStatus />
           {claims && (
             <span className="text-sm text-gray-500">
               {claims.role} · staff #{claims.staff_id}
