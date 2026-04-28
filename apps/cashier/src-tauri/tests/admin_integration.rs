@@ -394,6 +394,100 @@ async fn admin_settings_update_forbidden_for_cashier() {
 }
 
 #[tokio::test]
+async fn ui_admin_serves_index_html_with_spa_fallback() {
+    // Build a fresh rig and seed an admin_dist with a stub index.html, so
+    // we can prove ServeDir is mounted and the SPA fallback fires for
+    // unknown paths.
+    let master = Arc::new(Mutex::new(Master::open_in_memory().unwrap()));
+    let events = Arc::new(EventStore::open_in_memory().unwrap());
+    let kek = Arc::new(Kek::new_random());
+    let mock_clock = Arc::new(MockClock::at_ymd_hms(2026, 4, 27, 12, 0, 0));
+    let clock: Arc<dyn Clock> = mock_clock.clone();
+    let tz = FixedOffset::east_opt(7 * 3600).unwrap();
+    let event_service = EventService {
+        master: master.clone(),
+        events: events.clone(),
+        kek: kek.clone(),
+        clock: clock.clone(),
+        cutoff_hour: 11,
+        tz,
+    };
+    let signing = Arc::new(vec![1u8; 32]);
+    let auth = AuthService {
+        master: master.clone(),
+        clock: clock.clone(),
+        signing_key: signing,
+    };
+    let store = Arc::new(AggregateStore::new());
+    let (broadcast_tx, _rx) = tokio::sync::broadcast::channel(64);
+    let commands = CommandService {
+        master: master.clone(),
+        events: events.clone(),
+        event_service,
+        clock: clock.clone(),
+        auth: Arc::new(auth.clone()),
+        idem_lock: Arc::new(KeyMutex::new()),
+        agg_lock: Arc::new(KeyMutex::new()),
+        store: store.clone(),
+        broadcast_tx: broadcast_tx.clone(),
+    };
+    let settings = Arc::new(Settings::load(&master.lock().unwrap()).unwrap());
+    let tmp = tempfile::tempdir().unwrap();
+    let admin_dist = tmp.path().join("admin");
+    std::fs::create_dir_all(&admin_dist).unwrap();
+    std::fs::write(admin_dist.join("index.html"), "<html>hi from admin</html>").unwrap();
+    let app_state = Arc::new(AppState {
+        kek,
+        master,
+        events,
+        clock,
+        auth,
+        commands,
+        store,
+        settings,
+        broadcast_tx,
+        reports_dir: tmp.path().join("reports"),
+        admin_dist: admin_dist.clone(),
+    });
+    std::mem::forget(tmp);
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let router = build_router(app_state);
+    tokio::spawn(async move {
+        let _ = axum::serve(
+            listener,
+            router.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+        )
+        .await;
+    });
+    let base = format!("http://127.0.0.1:{port}");
+    let client = reqwest::Client::new();
+
+    // Direct index hit (explicit filename — ServeDir always serves that).
+    let resp = client
+        .get(format!("{base}/ui/admin/index.html"))
+        .send()
+        .await
+        .unwrap();
+    let status = resp.status();
+    let body = resp.text().await.unwrap();
+    eprintln!("status={status} body={body:?} admin_dist={admin_dist:?} exists={}", admin_dist.join("index.html").exists());
+    assert_eq!(status, 200);
+    assert!(body.contains("hi from admin"));
+
+    // SPA fallback for an unknown route → returns index.html via not_found_service.
+    let resp = client
+        .get(format!("{base}/ui/admin/spots"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body = resp.text().await.unwrap();
+    assert!(body.contains("hi from admin"));
+}
+
+#[tokio::test]
 async fn admin_reports_list_empty_then_get_404() {
     let rig = boot_admin_rig().await;
     let token = login(&rig, &rig.owner_pin).await;

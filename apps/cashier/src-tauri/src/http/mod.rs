@@ -4,3 +4,4 @@ pub mod error_layer;
 pub mod routes;
 pub mod server;
 pub mod spot_helper;
+pub mod static_admin;
