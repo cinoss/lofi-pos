@@ -11,6 +11,7 @@ pub mod error;
 pub mod http;
 pub mod keychain;
 pub mod print;
+pub mod rotation;
 pub mod services;
 pub mod store;
 pub mod time;
@@ -144,6 +145,10 @@ pub fn run() {
             // Plan F: spawn the EOD scheduler on the same runtime. Performs
             // startup catch-up immediately, then loops on next_cutoff.
             eod::scheduler::spawn(app_state.clone());
+
+            // UTC key rotation scheduler. Independent of EOD: ensures today's
+            // DEK exists and prunes any DEK older than 3 UTC days.
+            rotation::spawn(app_state.clone());
 
             Ok(())
         })
