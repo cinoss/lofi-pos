@@ -110,12 +110,11 @@ pub fn run_eod(state: &AppState, business_day: &str) -> AppResult<RunResult> {
     }
 
     // 6) Cutoff-driven event-row deletion (events.db, separate connection).
-    //    Order: AFTER the master tx commits. Rationale: if this fails the
-    //    daily_report row is already durable, so audit/reporting is preserved;
-    //    leftover rows decrypt only until the rotation service prunes their
-    //    DEK (≤3 UTC days). On the next EOD run, the short-circuit on
-    //    status='ok' returns early so this delete will not retry — manual
-    //    sweep or the natural crypto-shred is the recovery path.
+    //    Order: AFTER the master tx commits, so the daily_report row is durable
+    //    even if this delete fails. The DELETE itself is a single atomic
+    //    statement (sqlite implicit tx — no partial-row state). On retry, the
+    //    short-circuit on status='ok' returns early; recovery is either a
+    //    manual sweep or the natural crypto-shred when rotation prunes the DEK.
     if let Err(e) = state.events.delete_day(business_day) {
         tracing::error!(
             day = %business_day,

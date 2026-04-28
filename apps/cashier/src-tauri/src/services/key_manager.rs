@@ -17,8 +17,13 @@ use crate::services::utc_day::{days_ago, utc_day_of};
 use crate::store::master::Master;
 use std::sync::{Arc, Mutex};
 
-/// Hard upper bound on DEK age. Events encrypted with a DEK older than this
-/// become unreadable once `rotate()` runs (key crypto-shred).
+/// DEK retention window. Boundary semantics:
+/// - `rotate()` retains DEKs for `today, today-1, ..., today-KEY_TTL_DAYS` (4 keys with TTL=3).
+/// - `today - KEY_TTL_DAYS - 1` and older are pruned.
+/// - I.e., a key from exactly `KEY_TTL_DAYS` days ago is **kept** for one more
+///   rotation; a key strictly older is pruned (via `delete_deks_older_than(<)`).
+/// Effective worst-case decrypt window for newly-encrypted events: just over
+/// `KEY_TTL_DAYS + 1` calendar days.
 pub const KEY_TTL_DAYS: i64 = 3;
 
 /// UTC-day key manager.
