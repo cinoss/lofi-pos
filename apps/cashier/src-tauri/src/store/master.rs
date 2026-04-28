@@ -430,6 +430,38 @@ impl Master {
             .optional()?)
     }
 
+    /// Plan F: insert (or restart) an EOD run row, marking it 'running'.
+    /// Used by the runner before it begins work; idempotent across retries.
+    pub fn upsert_eod_running(&self, business_day: &str, started_at: i64) -> AppResult<()> {
+        self.conn.execute(
+            "INSERT INTO eod_runs(business_day, started_at, status, finished_at, error)
+             VALUES (?1, ?2, 'running', NULL, NULL)
+             ON CONFLICT(business_day) DO UPDATE SET
+               started_at = excluded.started_at,
+               status     = 'running',
+               finished_at = NULL,
+               error      = NULL",
+            params![business_day, started_at],
+        )?;
+        Ok(())
+    }
+
+    /// Plan F: mark `business_day` as failed, recording the error message and
+    /// finished_at. Used when build/write fails.
+    pub fn set_eod_runs_failed(
+        &self,
+        business_day: &str,
+        finished_at: i64,
+        error: &str,
+    ) -> AppResult<()> {
+        self.conn.execute(
+            "UPDATE eod_runs SET finished_at = ?1, status = 'failed', error = ?2
+             WHERE business_day = ?3",
+            params![finished_at, error, business_day],
+        )?;
+        Ok(())
+    }
+
     /// All idempotency cache rows for a given business day. Used by warm-up
     /// to repopulate the in-memory cache after restart.
     ///
