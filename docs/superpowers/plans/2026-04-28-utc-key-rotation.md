@@ -1,5 +1,7 @@
 # UTC Key Rotation Implementation Plan
 
+> **SUPERSEDED.** Direction changed to remote key service (Tor hidden service + arti client). See `2026-04-29-key-service-*` plans. Do NOT execute this plan.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace `services::day_key` (business-day-keyed) with a `KeyManager` (UTC-day-keyed) backed by a new `dek` table. Add a `RotationScheduler` tokio task that ensures today's UTC DEK exists and prunes keys older than 3 UTC days. Move `event` row deletion to the EOD pipeline (cutoff-driven). Add `GET /admin/keys` for ops visibility. Drop `day_key` table — pre-prod, no data preservation.
