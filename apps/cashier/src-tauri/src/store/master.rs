@@ -46,6 +46,16 @@ pub struct Spot {
     pub status: String,
 }
 
+/// Plan F: row returned from `daily_report`. The `*_json` columns are raw
+/// JSON strings (the serialized `Report` from `eod::builder`).
+#[derive(Debug, Clone, Serialize)]
+pub struct DailyReportRow {
+    pub business_day: String,
+    pub generated_at: i64,
+    pub order_summary_json: String,
+    pub inventory_summary_json: String,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct Product {
     pub id: i64,
@@ -183,6 +193,43 @@ impl Master {
             .optional()?)
     }
 
+    /// Update mutable fields on an existing staff row. Any of name/pin_hash/role/team
+    /// may be `None` to leave that field untouched. Returns true on hit.
+    pub fn update_staff(
+        &self,
+        id: i64,
+        name: Option<&str>,
+        pin_hash: Option<&str>,
+        role: Option<Role>,
+        team: Option<Option<&str>>,
+    ) -> AppResult<bool> {
+        // Defensive: read existing row, fold optional updates, write back.
+        let existing = match self.get_staff(id)? {
+            Some(s) => s,
+            None => return Ok(false),
+        };
+        let new_name = name.unwrap_or(&existing.name);
+        let new_pin = pin_hash.unwrap_or(&existing.pin_hash);
+        let new_role = role.unwrap_or(existing.role);
+        let new_team_owned: Option<String> = match team {
+            Some(t) => t.map(|s| s.to_string()),
+            None => existing.team,
+        };
+        let n = self.conn.execute(
+            "UPDATE staff SET name = ?1, pin_hash = ?2, role = ?3, team = ?4 WHERE id = ?5",
+            params![new_name, new_pin, new_role.as_str(), new_team_owned, id],
+        )?;
+        Ok(n > 0)
+    }
+
+    /// Delete a staff row.
+    pub fn delete_staff(&self, id: i64) -> AppResult<bool> {
+        let n = self
+            .conn
+            .execute("DELETE FROM staff WHERE id = ?1", params![id])?;
+        Ok(n > 0)
+    }
+
     /// List all staff, ordered by id.
     pub fn list_staff(&self) -> AppResult<Vec<Staff>> {
         let mut stmt = self
@@ -225,6 +272,37 @@ impl Master {
                 row_to_spot,
             )
             .optional()?)
+    }
+
+    /// Update fields on an existing spot. Returns true on hit.
+    pub fn update_spot(
+        &self,
+        id: i64,
+        name: &str,
+        kind: SpotKind,
+        hourly_rate: Option<i64>,
+        parent_id: Option<i64>,
+    ) -> AppResult<bool> {
+        if kind == SpotKind::Table && hourly_rate.is_some() {
+            return Err(AppError::Validation("table cannot have hourly_rate".into()));
+        }
+        if kind == SpotKind::Room && hourly_rate.is_none() {
+            return Err(AppError::Validation("room must have hourly_rate".into()));
+        }
+        let n = self.conn.execute(
+            "UPDATE spot SET name = ?1, kind = ?2, hourly_rate = ?3, parent_id = ?4
+             WHERE id = ?5",
+            params![name, kind.as_str(), hourly_rate, parent_id, id],
+        )?;
+        Ok(n > 0)
+    }
+
+    /// Delete a spot row. Returns true if a row was removed.
+    pub fn delete_spot(&self, id: i64) -> AppResult<bool> {
+        let n = self
+            .conn
+            .execute("DELETE FROM spot WHERE id = ?1", params![id])?;
+        Ok(n > 0)
     }
 
     /// List all spots, ordered by id.
@@ -280,6 +358,39 @@ impl Master {
             })?
             .collect::<Result<Vec<_>, _>>()?;
         Ok(rows)
+    }
+
+    /// Insert a product row. Returns the new id.
+    pub fn create_product(&self, name: &str, price: i64, route: &str, kind: &str) -> AppResult<i64> {
+        self.conn.execute(
+            "INSERT INTO product(name, price, route, kind) VALUES (?1, ?2, ?3, ?4)",
+            params![name, price, route, kind],
+        )?;
+        Ok(self.conn.last_insert_rowid())
+    }
+
+    /// Update mutable fields on an existing product row. Returns true on hit.
+    pub fn update_product(
+        &self,
+        id: i64,
+        name: &str,
+        price: i64,
+        route: &str,
+        kind: &str,
+    ) -> AppResult<bool> {
+        let n = self.conn.execute(
+            "UPDATE product SET name = ?1, price = ?2, route = ?3, kind = ?4 WHERE id = ?5",
+            params![name, price, route, kind, id],
+        )?;
+        Ok(n > 0)
+    }
+
+    /// Delete a product row.
+    pub fn delete_product(&self, id: i64) -> AppResult<bool> {
+        let n = self
+            .conn
+            .execute("DELETE FROM product WHERE id = ?1", params![id])?;
+        Ok(n > 0)
     }
 
     /// List all products, ordered by id.
@@ -367,6 +478,89 @@ impl Master {
             .query_map([], |r| r.get::<_, String>(0))?
             .collect::<Result<Vec<_>, _>>()?;
         Ok(days)
+    }
+
+    /// Plan F: read a `daily_report` row by `business_day`.
+    pub fn get_daily_report(&self, business_day: &str) -> AppResult<Option<DailyReportRow>> {
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT business_day, generated_at, order_summary_json, inventory_summary_json
+                 FROM daily_report WHERE business_day = ?1",
+                params![business_day],
+                |r| {
+                    Ok(DailyReportRow {
+                        business_day: r.get(0)?,
+                        generated_at: r.get(1)?,
+                        order_summary_json: r.get(2)?,
+                        inventory_summary_json: r.get(3)?,
+                    })
+                },
+            )
+            .optional()?)
+    }
+
+    /// Plan F: list `daily_report` rows newest-first (by generated_at).
+    pub fn list_daily_reports(&self) -> AppResult<Vec<DailyReportRow>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT business_day, generated_at, order_summary_json, inventory_summary_json
+             FROM daily_report ORDER BY business_day DESC",
+        )?;
+        let rows = stmt
+            .query_map([], |r| {
+                Ok(DailyReportRow {
+                    business_day: r.get(0)?,
+                    generated_at: r.get(1)?,
+                    order_summary_json: r.get(2)?,
+                    inventory_summary_json: r.get(3)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    /// Plan F: read the `status` column from `eod_runs` for `business_day`.
+    pub fn get_eod_runs_status(&self, business_day: &str) -> AppResult<Option<String>> {
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT status FROM eod_runs WHERE business_day = ?1",
+                params![business_day],
+                |r| r.get::<_, String>(0),
+            )
+            .optional()?)
+    }
+
+    /// Plan F: insert (or restart) an EOD run row, marking it 'running'.
+    /// Used by the runner before it begins work; idempotent across retries.
+    pub fn upsert_eod_running(&self, business_day: &str, started_at: i64) -> AppResult<()> {
+        self.conn.execute(
+            "INSERT INTO eod_runs(business_day, started_at, status, finished_at, error)
+             VALUES (?1, ?2, 'running', NULL, NULL)
+             ON CONFLICT(business_day) DO UPDATE SET
+               started_at = excluded.started_at,
+               status     = 'running',
+               finished_at = NULL,
+               error      = NULL",
+            params![business_day, started_at],
+        )?;
+        Ok(())
+    }
+
+    /// Plan F: mark `business_day` as failed, recording the error message and
+    /// finished_at. Used when build/write fails.
+    pub fn set_eod_runs_failed(
+        &self,
+        business_day: &str,
+        finished_at: i64,
+        error: &str,
+    ) -> AppResult<()> {
+        self.conn.execute(
+            "UPDATE eod_runs SET finished_at = ?1, status = 'failed', error = ?2
+             WHERE business_day = ?3",
+            params![finished_at, error, business_day],
+        )?;
+        Ok(())
     }
 
     /// All idempotency cache rows for a given business day. Used by warm-up

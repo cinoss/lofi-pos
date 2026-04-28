@@ -7,6 +7,7 @@ use crate::store::events::EventStore;
 use crate::store::master::Master;
 use crate::time::Clock;
 use chrono::FixedOffset;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 /// Settings cache. Loaded once at startup from `master.db`. Held inside
@@ -75,4 +76,12 @@ pub struct AppState {
     pub store: Arc<AggregateStore>,
     pub settings: Arc<Settings>,
     pub broadcast_tx: tokio::sync::broadcast::Sender<crate::http::broadcast::EventNotice>,
+    /// Directory where the EOD pipeline writes `<business_day>.json` report
+    /// files (in addition to the `daily_report` row in master.db). Created
+    /// on demand by the runner.
+    pub reports_dir: PathBuf,
+    /// Filesystem path to the built `apps/admin` SPA. Served by axum at
+    /// `/ui/admin/*`. May not exist (dev convenience): the static handler
+    /// logs a warning and returns 404 in that case.
+    pub admin_dist: PathBuf,
 }

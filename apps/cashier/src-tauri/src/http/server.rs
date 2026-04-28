@@ -27,6 +27,7 @@ use tower_http::trace::TraceLayer;
 /// — they require an already-issued token, so they aren't useful brute
 /// targets.
 pub fn build_router(state: Arc<AppState>) -> Router {
+    let admin_dist = state.admin_dist.clone();
     // 6 per second sustained × burst 3 ≈ 10 attempts/IP/minute. The crate
     // uses a token-bucket: `period` is the refill interval (one token per
     // 1/per_second seconds), `burst_size` is the bucket capacity.
@@ -71,7 +72,13 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .merge(crate::http::routes::order::router())
         .merge(crate::http::routes::payment::router())
         .merge(crate::http::routes::ws::router())
+        .merge(crate::http::routes::admin::router())
+        .merge(crate::http::routes::reports::router())
         .with_state(state)
+        // Admin SPA static mount. Lives at `/ui/admin/*`; `/admin/*` is the
+        // JSON API. SPA fallback inside `static_admin::router` returns
+        // index.html so client-side routing works.
+        .nest_service("/ui/admin", crate::http::static_admin::service(admin_dist))
         .layer(
             CorsLayer::new()
                 .allow_origin(Any)
@@ -87,6 +94,12 @@ pub fn build_router(state: Arc<AppState>) -> Router {
 pub async fn serve(state: Arc<AppState>) -> AppResult<()> {
     let port = state.settings.http_port;
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
+    if !state.admin_dist.exists() {
+        tracing::warn!(
+            path = ?state.admin_dist,
+            "admin_dist directory does not exist; /ui/admin/* will return 404",
+        );
+    }
     let router = build_router(state);
     tracing::info!(%addr, "axum http server listening");
     let listener = tokio::net::TcpListener::bind(addr)

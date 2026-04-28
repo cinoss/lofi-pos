@@ -129,6 +129,53 @@ impl CommandService {
                 self.clock.now().timestamp_millis(),
             ));
 
+        // Print side-effect (Plan F). `print(kind, payload)` is a stdout stub
+        // today; a real printer router can replace it without touching call
+        // sites. Only the events that actually produce a physical artifact in
+        // operation get a print: kitchen/bar tickets on OrderPlaced, customer
+        // receipts on PaymentTaken, end-of-session marker on SessionClosed.
+        match &event {
+            DomainEvent::OrderPlaced {
+                session_id,
+                order_id,
+                items,
+            } => {
+                let payload = serde_json::json!({
+                    "session_id": session_id,
+                    "order_id": order_id,
+                    "items": items,
+                });
+                crate::print::print("order_ticket", &payload);
+            }
+            DomainEvent::PaymentTaken {
+                session_id,
+                subtotal,
+                discount_pct,
+                vat_pct,
+                total,
+                method,
+            } => {
+                let payload = serde_json::json!({
+                    "session_id": session_id,
+                    "subtotal": subtotal,
+                    "discount_pct": discount_pct,
+                    "vat_pct": vat_pct,
+                    "total": total,
+                    "method": method,
+                });
+                crate::print::print("receipt", &payload);
+            }
+            DomainEvent::SessionClosed { closed_by, reason } => {
+                let payload = serde_json::json!({
+                    "session_id": aggregate_id,
+                    "closed_by": closed_by,
+                    "reason": reason,
+                });
+                crate::print::print("session_closed", &payload);
+            }
+            _ => {}
+        }
+
         // Project from memory.
         let projection = project(self)?;
 

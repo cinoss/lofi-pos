@@ -85,6 +85,7 @@ async fn boot_rig() -> Rig {
 
     let settings = Arc::new(Settings::load(&master.lock().unwrap()).unwrap());
 
+    let tmp = tempfile::tempdir().unwrap();
     let app_state = Arc::new(AppState {
         kek,
         master,
@@ -95,7 +96,11 @@ async fn boot_rig() -> Rig {
         store,
         settings,
         broadcast_tx,
+        reports_dir: tmp.path().join("reports"),
+        admin_dist: tmp.path().join("admin_dist"),
     });
+    // Keep tmpdir alive for the spawned server's lifetime.
+    std::mem::forget(tmp);
 
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();

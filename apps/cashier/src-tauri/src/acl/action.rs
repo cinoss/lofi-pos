@@ -26,10 +26,14 @@ pub enum Action {
     GetSession,
     // reports
     ViewLiveReports,
+    /// Plan F: list/get historical `daily_report` rows. Manager-and-up.
+    ViewReports,
     RunEod,
     // admin
     EditMenu,
     EditRecipes,
     EditStaff,
     EditSettings,
+    /// Plan F: spot CRUD (rooms + tables) — Owner-only.
+    SpotEdit,
 }
