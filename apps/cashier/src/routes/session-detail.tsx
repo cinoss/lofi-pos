@@ -11,10 +11,6 @@ import type {
 import { apiClient, ApiError } from "../lib/api";
 import { Button } from "@lofi-pos/ui/components/button";
 
-function newKey(): string {
-  return crypto.randomUUID();
-}
-
 export function SessionDetailRoute() {
   const { id } = useParams<{ id: string }>();
   const sessionId = id!;
@@ -31,10 +27,18 @@ export function SessionDetailRoute() {
     queryFn: () => apiClient.get("/products", z.array(Product)),
   });
 
+  // Stable idempotency keys per user intent.
+  // - placeKey: tied to current cart batch; rotated on successful place-order
+  //   so the next batch gets a fresh key.
+  // - closeKey: one per detail-page mount; never rotated (only one close
+  //   attempt per session).
+  const [placeKey, setPlaceKey] = useState(() => crypto.randomUUID());
+  const [closeKey] = useState(() => crypto.randomUUID());
+
   const placeOrder = useMutation({
     mutationFn: (items: RawOrderItem[]) => {
       const input: PlaceOrderInput = {
-        idempotency_key: newKey(),
+        idempotency_key: placeKey,
         session_id: sessionId,
         items,
       };
@@ -44,12 +48,13 @@ export function SessionDetailRoute() {
       qc.invalidateQueries({ queryKey: ["session", sessionId] });
       qc.invalidateQueries({ queryKey: ["sessions", "active"] });
       setCart({});
+      setPlaceKey(crypto.randomUUID()); // rotate for next batch
     },
   });
 
   const closeSession = useMutation({
     mutationFn: () => {
-      const input: CloseSessionInput = { idempotency_key: newKey() };
+      const input: CloseSessionInput = { idempotency_key: closeKey };
       return apiClient.post(
         `/sessions/${sessionId}/close`,
         SessionState,

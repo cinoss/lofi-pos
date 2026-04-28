@@ -7,10 +7,6 @@ import { apiClient, ApiError } from "../lib/api";
 import { Button } from "@lofi-pos/ui/components/button";
 import { OverrideModal } from "../components/override-modal";
 
-function newKey(): string {
-  return crypto.randomUUID();
-}
-
 export function PaymentRoute() {
   const { id } = useParams<{ id: string }>();
   const sessionId = id!;
@@ -20,6 +16,11 @@ export function PaymentRoute() {
   const [discountPct, setDiscountPct] = useState(0);
   const [vatPct, setVatPct] = useState(8);
   const [method, setMethod] = useState("cash");
+
+  // Stable idempotency key per form intent. Generated once when the form
+  // mounts; reused across retries (network blip, override flow). On success
+  // we navigate away, so the key is naturally discarded with the component.
+  const [idempotencyKey] = useState(() => crypto.randomUUID());
 
   const total = Math.round(
     (((subtotal * (100 - discountPct)) / 100) * (100 + vatPct)) / 100,
@@ -43,7 +44,7 @@ export function PaymentRoute() {
 
   const submit = () => {
     const input: TakePaymentInput = {
-      idempotency_key: newKey(),
+      idempotency_key: idempotencyKey,
       subtotal,
       discount_pct: discountPct,
       vat_pct: vatPct,
