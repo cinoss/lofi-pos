@@ -1,8 +1,6 @@
 import { Link, Outlet } from "react-router-dom";
 import { Button } from "@lofi-pos/ui/components/button";
-import { useAuth } from "../lib/auth-context";
-import { useSettings } from "../lib/settings-context";
-import { useIdleTimer } from "../lib/idle-tracker";
+import { useAuth, useSettings, useIdleTimer } from "@lofi-pos/pos-ui";
 
 export function AppShell() {
   const { claims, lock, logout } = useAuth();

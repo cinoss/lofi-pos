@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { PinPad } from "../components/pin-pad";
-import { useAuth } from "../lib/auth-context";
+import { useAuth } from "@lofi-pos/pos-ui";
 import { ApiError } from "../lib/api";
 
 export function LoginRoute() {
