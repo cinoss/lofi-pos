@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Button } from "@lofi-pos/ui/components/button";
+import { MIN_PIN_LEN } from "@lofi-pos/shared";
 
 interface PinPadProps {
   onSubmit: (pin: string) => Promise<void> | void;
@@ -59,7 +60,7 @@ export function PinPad({
             size="lg"
             className="h-16 w-20 text-xl"
             onClick={() => press(k)}
-            disabled={disabled || (k === "submit" && pin.length < 6)}
+            disabled={disabled || (k === "submit" && pin.length < MIN_PIN_LEN)}
           >
             {k === "back" ? "⌫" : k === "submit" ? "✓" : k}
           </Button>
