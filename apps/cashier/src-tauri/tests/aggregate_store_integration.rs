@@ -1,11 +1,10 @@
 mod common;
 
 use cashier_lib::auth::AuthService;
-use cashier_lib::crypto::Kek;
+use cashier_lib::crypto::{Dek, Kek};
 use cashier_lib::domain::apply::{apply, ApplyCtx};
 use cashier_lib::domain::event::DomainEvent;
 use cashier_lib::services::command_service::CommandService;
-use cashier_lib::services::day_key;
 use cashier_lib::services::event_service::EventService;
 use cashier_lib::services::locking::KeyMutex;
 use cashier_lib::store::aggregate_store::AggregateStore;
@@ -16,6 +15,16 @@ use cashier_lib::time::Clock;
 use chrono::FixedOffset;
 use common::{item, room};
 use std::sync::{Arc, Mutex};
+
+fn get_or_create_dek(master: &Master, kek: &Kek, day: &str) -> Dek {
+    if let Some(wrapped) = master.get_dek(day).unwrap() {
+        return kek.unwrap(&wrapped).unwrap();
+    }
+    let dek = Dek::new_random();
+    let wrapped = kek.wrap(&dek).unwrap();
+    let _ = master.put_dek(day, &wrapped, 0).unwrap();
+    dek
+}
 
 #[allow(clippy::too_many_arguments)]
 fn write_event(
@@ -28,7 +37,7 @@ fn write_event(
     ts: i64,
     event_type: &str,
 ) {
-    let dek = day_key::get_or_create(master, kek, day).unwrap();
+    let dek = get_or_create_dek(master, kek, day);
     let aad = format!("{day}|{event_type}|{agg}|{day}");
     let payload = serde_json::to_vec(ev).unwrap();
     let blob = dek.encrypt(&payload, aad.as_bytes()).unwrap();

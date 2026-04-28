@@ -1,8 +1,7 @@
 use crate::business_day::business_day_of;
-use crate::crypto::Kek;
+use crate::crypto::{Dek, Kek};
 use crate::domain::event::DomainEvent;
 use crate::error::AppResult;
-use crate::services::day_key;
 use crate::store::events::{AppendEvent, EventStore};
 use crate::store::master::Master;
 use crate::time::Clock;
@@ -40,6 +39,26 @@ pub struct WriteCtx<'a> {
     pub at: Option<DateTime<Utc>>,
 }
 
+/// Bridge helper retained for the Task 3 commit; Task 4 removes this together
+/// with the `master`/`kek` fields on EventService once `KeyManager` is wired
+/// in.
+fn get_or_create_dek_for_business_day(master: &Master, kek: &Kek, day: &str) -> AppResult<Dek> {
+    if let Some(wrapped) = master.get_dek(day)? {
+        return kek.unwrap(&wrapped);
+    }
+    let dek = Dek::new_random();
+    let wrapped = kek.wrap(&dek)?;
+    let inserted = master.put_dek(day, &wrapped, 0)?;
+    if inserted {
+        Ok(dek)
+    } else {
+        let stored = master
+            .get_dek(day)?
+            .ok_or(crate::error::AppError::NotFound)?;
+        kek.unwrap(&stored)
+    }
+}
+
 impl EventService {
     pub fn write(&self, ctx: WriteCtx<'_>, ev: &DomainEvent) -> AppResult<i64> {
         let now = ctx.at.unwrap_or_else(|| self.clock.now());
@@ -47,7 +66,8 @@ impl EventService {
         let day = business_day_of(now, self.tz, self.cutoff_hour);
         let dek = {
             let master = self.master.lock().unwrap();
-            day_key::get_or_create(&master, &self.kek, &day)?
+            // TODO(plan-utc-key-rotation Task 4): swap to KeyManager.
+            get_or_create_dek_for_business_day(&master, &self.kek, &day)?
         };
 
         let payload = serde_json::to_vec(ev)
