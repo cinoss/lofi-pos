@@ -1,22 +1,26 @@
 use crate::business_day::business_day_of;
-use crate::crypto::{Dek, Kek};
 use crate::domain::event::DomainEvent;
 use crate::error::AppResult;
+use crate::services::key_manager::KeyManager;
+use crate::services::utc_day::utc_day_of;
 use crate::store::events::{AppendEvent, EventStore};
-use crate::store::master::Master;
 use crate::time::Clock;
 use chrono::DateTime;
 use chrono::FixedOffset;
 use chrono::Utc;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 // Note: `business_day_of` requires a `FixedOffset` parameter (Wave 1 fix). The venue's
 // fixed timezone offset is supplied at construction; production wires it from the
 // `business_day_tz_offset_seconds` setting.
+//
+// `key_manager` owns the wrapped-DEK lifecycle (UTC-day-keyed, 3-day TTL,
+// rotation service in `crate::rotation`). `business_day` is purely the
+// reporting tag — it is independent of the crypto key id, which is now
+// `utc_day_of(write_ts)`.
 pub struct EventService {
-    pub master: Arc<Mutex<Master>>,
     pub events: Arc<EventStore>,
-    pub kek: Arc<Kek>,
+    pub key_manager: Arc<KeyManager>,
     pub clock: Arc<dyn Clock>,
     pub cutoff_hour: u32,
     pub tz: FixedOffset,
@@ -39,51 +43,29 @@ pub struct WriteCtx<'a> {
     pub at: Option<DateTime<Utc>>,
 }
 
-/// Bridge helper retained for the Task 3 commit; Task 4 removes this together
-/// with the `master`/`kek` fields on EventService once `KeyManager` is wired
-/// in.
-fn get_or_create_dek_for_business_day(master: &Master, kek: &Kek, day: &str) -> AppResult<Dek> {
-    if let Some(wrapped) = master.get_dek(day)? {
-        return kek.unwrap(&wrapped);
-    }
-    let dek = Dek::new_random();
-    let wrapped = kek.wrap(&dek)?;
-    let inserted = master.put_dek(day, &wrapped, 0)?;
-    if inserted {
-        Ok(dek)
-    } else {
-        let stored = master
-            .get_dek(day)?
-            .ok_or(crate::error::AppError::NotFound)?;
-        kek.unwrap(&stored)
-    }
-}
-
 impl EventService {
     pub fn write(&self, ctx: WriteCtx<'_>, ev: &DomainEvent) -> AppResult<i64> {
         let now = ctx.at.unwrap_or_else(|| self.clock.now());
         let ts = now.timestamp_millis();
-        let day = business_day_of(now, self.tz, self.cutoff_hour);
-        let dek = {
-            let master = self.master.lock().unwrap();
-            // TODO(plan-utc-key-rotation Task 4): swap to KeyManager.
-            get_or_create_dek_for_business_day(&master, &self.kek, &day)?
-        };
+        let business_day = business_day_of(now, self.tz, self.cutoff_hour);
+        let utc_day = utc_day_of(ts);
+        let dek = self.key_manager.current_dek(ts)?;
 
         let payload = serde_json::to_vec(ev)
             .map_err(|e| crate::error::AppError::Internal(format!("serialize event: {e}")))?;
         // AAD binds ciphertext to (business_day, event_type, aggregate_id, key_id).
-        // key_id is included so future key-rotation that decouples it from business_day
-        // stays authenticated.
+        // After UTC key rotation, key_id == utc_day, which can differ from
+        // business_day across the local cutoff. Both are bound into AAD so any
+        // tamper to either field fails GCM auth.
         let aad = format!(
-            "{day}|{}|{}|{day}",
+            "{business_day}|{}|{}|{utc_day}",
             ev.event_type().as_str(),
             ctx.aggregate_id
         );
         let blob = dek.encrypt(&payload, aad.as_bytes())?;
 
         self.events.append(AppendEvent {
-            business_day: &day,
+            business_day: &business_day,
             ts,
             event_type: ev.event_type().as_str(),
             aggregate_id: ctx.aggregate_id,
@@ -92,21 +74,12 @@ impl EventService {
             override_staff_id: ctx.override_staff_id,
             override_staff_name: ctx.override_staff_name,
             payload_enc: &blob,
-            key_id: &day,
+            key_id: &utc_day,
         })
     }
 
     pub fn read_decrypted(&self, row: &crate::store::events::EventRow) -> AppResult<DomainEvent> {
-        let wrapped = {
-            let master = self.master.lock().unwrap();
-            master
-                .get_dek(&row.key_id)?
-                .ok_or(crate::error::AppError::NotFound)?
-        };
-        let dek = self.kek.unwrap(&wrapped)?;
-        // AAD binds ciphertext to (business_day, event_type, aggregate_id, key_id).
-        // key_id is included so future key-rotation that decouples it from business_day
-        // stays authenticated.
+        let dek = self.key_manager.dek_for(&row.key_id)?;
         let aad = format!(
             "{}|{}|{}|{}",
             row.business_day, row.event_type, row.aggregate_id, row.key_id
@@ -123,38 +96,37 @@ mod tests {
     use super::*;
     use crate::crypto::Kek;
     use crate::domain::event::DomainEvent;
+    use crate::services::key_manager::KeyManager;
     use crate::store::events::EventStore;
     use crate::store::master::Master;
     use crate::time::test_support::MockClock;
+    use std::sync::Mutex;
 
     #[allow(clippy::type_complexity)]
     fn rig() -> (
-        Arc<Mutex<Master>>,
+        Arc<KeyManager>,
         Arc<EventStore>,
-        Arc<Kek>,
         Arc<MockClock>,
         FixedOffset,
     ) {
         let master = Arc::new(Mutex::new(Master::open_in_memory().unwrap()));
         let events = Arc::new(EventStore::open_in_memory().unwrap());
         let kek = Arc::new(Kek::new_random());
+        let key_manager = Arc::new(KeyManager::new(master, kek));
         let clock = Arc::new(MockClock::at_ymd_hms(2026, 4, 27, 12, 0, 0));
-        // Vietnam TZ +7 — the production case.
         let tz = FixedOffset::east_opt(7 * 3600).unwrap();
-        (master, events, kek, clock, tz)
+        (key_manager, events, clock, tz)
     }
 
     fn svc(
-        master: Arc<Mutex<Master>>,
+        key_manager: Arc<KeyManager>,
         events: Arc<EventStore>,
-        kek: Arc<Kek>,
         clock: Arc<MockClock>,
         tz: FixedOffset,
     ) -> EventService {
         EventService {
-            master,
             events,
-            kek,
+            key_manager,
             clock,
             cutoff_hour: 11,
             tz,
@@ -163,14 +135,8 @@ mod tests {
 
     #[test]
     fn write_then_read_roundtrip() {
-        let (master, events, kek, clock, tz) = rig();
-        let writer = svc(
-            master.clone(),
-            events.clone(),
-            kek.clone(),
-            clock.clone(),
-            tz,
-        );
+        let (key_manager, events, clock, tz) = rig();
+        let writer = svc(key_manager.clone(), events.clone(), clock.clone(), tz);
 
         let ev = DomainEvent::SessionOpened {
             spot: crate::domain::spot::SpotRef::Room {
@@ -205,14 +171,8 @@ mod tests {
 
     #[test]
     fn cross_midnight_event_belongs_to_opening_day() {
-        let (master, events, kek, clock, tz) = rig();
-        let writer = svc(
-            master.clone(),
-            events.clone(),
-            kek.clone(),
-            clock.clone(),
-            tz,
-        );
+        let (key_manager, events, clock, tz) = rig();
+        let writer = svc(key_manager.clone(), events.clone(), clock.clone(), tz);
         // UTC 2026-04-28 03:00 with Vietnam TZ (+7) is local 2026-04-28 10:00,
         // which is BEFORE the local 11:00 cutoff — so it still belongs to local
         // business day 2026-04-27. (Same expected result as the original UTC-only
@@ -241,14 +201,8 @@ mod tests {
 
     #[test]
     fn aad_tamper_aggregate_id_fails_decrypt() {
-        let (master, events, kek, clock, tz) = rig();
-        let writer = svc(
-            master.clone(),
-            events.clone(),
-            kek.clone(),
-            clock.clone(),
-            tz,
-        );
+        let (key_manager, events, clock, tz) = rig();
+        let writer = svc(key_manager.clone(), events.clone(), clock.clone(), tz);
         writer
             .write(
                 WriteCtx {
@@ -272,14 +226,8 @@ mod tests {
 
     #[test]
     fn aad_tamper_event_type_fails_decrypt() {
-        let (master, events, kek, clock, tz) = rig();
-        let writer = svc(
-            master.clone(),
-            events.clone(),
-            kek.clone(),
-            clock.clone(),
-            tz,
-        );
+        let (key_manager, events, clock, tz) = rig();
+        let writer = svc(key_manager.clone(), events.clone(), clock.clone(), tz);
         writer
             .write(
                 WriteCtx {
@@ -303,18 +251,12 @@ mod tests {
 
     #[test]
     fn aad_tamper_business_day_fails_decrypt() {
-        // Note: mutating business_day ALSO mutates key_id semantics — read fails because
-        // master has no day_key for the new business_day (NotFound), not because of GCM.
-        // This still exercises the pipeline; documents that decoupling business_day/key_id
-        // would be a real AAD failure.
-        let (master, events, kek, clock, tz) = rig();
-        let writer = svc(
-            master.clone(),
-            events.clone(),
-            kek.clone(),
-            clock.clone(),
-            tz,
-        );
+        // After UTC key rotation, business_day and key_id are decoupled — the
+        // row's `key_id` (utc_day) still resolves to the same DEK, so a forged
+        // `business_day` produces a real AES-GCM authentication failure rather
+        // than a missing-key error.
+        let (key_manager, events, clock, tz) = rig();
+        let writer = svc(key_manager.clone(), events.clone(), clock.clone(), tz);
         writer
             .write(
                 WriteCtx {
@@ -333,6 +275,11 @@ mod tests {
             .unwrap();
         let mut rows = events.list_for_aggregate("x").unwrap();
         rows[0].business_day = "1999-01-01".into();
-        assert!(writer.read_decrypted(&rows[0]).is_err());
+        let res = writer.read_decrypted(&rows[0]);
+        match res {
+            Err(crate::error::AppError::Crypto(_)) => {}
+            Err(e) => panic!("expected Crypto, got {e}"),
+            Ok(_) => panic!("expected error, got Ok"),
+        }
     }
 }

@@ -8,6 +8,7 @@ use crate::eod::{business_day::business_day_for, business_day::Cfg, runner::run_
 use crate::keychain;
 use crate::services::command_service::CommandService;
 use crate::services::event_service::EventService;
+use crate::services::key_manager::KeyManager;
 use crate::services::locking::KeyMutex;
 use crate::store::aggregate_store::AggregateStore;
 use crate::store::events::EventStore;
@@ -62,10 +63,10 @@ pub fn run_eod_now(day: Option<String>) -> Result<(), Box<dyn std::error::Error>
         business_day_for(yesterday_ms, cfg)
     });
 
+    let key_manager = Arc::new(KeyManager::new(master.clone(), kek.clone()));
     let event_service = EventService {
-        master: master.clone(),
         events: events.clone(),
-        kek: kek.clone(),
+        key_manager: key_manager.clone(),
         clock: clock.clone(),
         cutoff_hour: cfg.cutoff_hour,
         tz: FixedOffset::east_opt(cfg.tz_offset_seconds).unwrap(),
@@ -93,6 +94,7 @@ pub fn run_eod_now(day: Option<String>) -> Result<(), Box<dyn std::error::Error>
         kek,
         master,
         events,
+        key_manager,
         clock,
         auth,
         commands,

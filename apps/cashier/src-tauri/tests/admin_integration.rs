@@ -49,10 +49,13 @@ async fn boot_admin_rig() -> Rig {
             .unwrap();
     }
 
+    let key_manager = Arc::new(cashier_lib::services::key_manager::KeyManager::new(
+        master.clone(),
+        kek.clone(),
+    ));
     let event_service = EventService {
-        master: master.clone(),
         events: events.clone(),
-        kek: kek.clone(),
+        key_manager: key_manager.clone(),
         clock: clock.clone(),
         cutoff_hour: 11,
         tz,
@@ -82,6 +85,7 @@ async fn boot_admin_rig() -> Rig {
         kek,
         master,
         events,
+        key_manager,
         clock,
         auth,
         commands,
@@ -404,10 +408,13 @@ async fn ui_admin_serves_index_html_with_spa_fallback() {
     let mock_clock = Arc::new(MockClock::at_ymd_hms(2026, 4, 27, 12, 0, 0));
     let clock: Arc<dyn Clock> = mock_clock.clone();
     let tz = FixedOffset::east_opt(7 * 3600).unwrap();
+    let key_manager = Arc::new(cashier_lib::services::key_manager::KeyManager::new(
+        master.clone(),
+        kek.clone(),
+    ));
     let event_service = EventService {
-        master: master.clone(),
         events: events.clone(),
-        kek: kek.clone(),
+        key_manager: key_manager.clone(),
         clock: clock.clone(),
         cutoff_hour: 11,
         tz,
@@ -440,6 +447,7 @@ async fn ui_admin_serves_index_html_with_spa_fallback() {
         kek,
         master,
         events,
+        key_manager,
         clock,
         auth,
         commands,

@@ -192,10 +192,13 @@ fn merged_session_bill_includes_source_orders() {
     let kek = Arc::new(Kek::new_random());
     let mock_clock = Arc::new(MockClock::at_ymd_hms(2026, 4, 27, 12, 0, 0));
     let clock: Arc<dyn Clock> = mock_clock.clone();
+    let key_manager = Arc::new(cashier_lib::services::key_manager::KeyManager::new(
+        master.clone(),
+        kek.clone(),
+    ));
     let event_service = EventService {
-        master: master.clone(),
         events: events.clone(),
-        kek: kek.clone(),
+        key_manager,
         clock: clock.clone(),
         cutoff_hour: 11,
         tz: FixedOffset::east_opt(7 * 3600).unwrap(),
