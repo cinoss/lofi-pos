@@ -55,7 +55,9 @@ pub fn run_eod(state: &AppState, business_day: &str) -> AppResult<RunResult> {
     let report = match build_report(state, business_day) {
         Ok(r) => r,
         Err(e) => {
-            let _ = mark_failed(state, business_day, &e.to_string());
+            if let Err(me) = mark_failed(state, business_day, &e.to_string()) {
+                tracing::error!(day = %business_day, err = %me, "eod mark_failed failed");
+            }
             return Err(e);
         }
     };
@@ -63,7 +65,9 @@ pub fn run_eod(state: &AppState, business_day: &str) -> AppResult<RunResult> {
     // 4) Write report file. (Treated as fatal; if it fails the day stays
     //    'failed' so the next catch-up retries.)
     if let Err(e) = write_report_file(state, &report) {
-        let _ = mark_failed(state, business_day, &e.to_string());
+        if let Err(me) = mark_failed(state, business_day, &e.to_string()) {
+            tracing::error!(day = %business_day, err = %me, "eod mark_failed failed");
+        }
         return Err(e);
     }
 

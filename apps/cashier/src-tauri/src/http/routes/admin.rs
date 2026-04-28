@@ -17,8 +17,22 @@ use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::routing::{get, put};
 use axum::{Json, Router};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::sync::Arc;
+
+/// Three-way deserializer for optional fields where the caller distinguishes
+/// "field absent" from "field present and null". Plain `Option<Option<T>>`
+/// with default serde derive collapses both to `None`; this helper maps:
+///   absent       → `None`
+///   `null`       → `Some(None)`
+///   `value`      → `Some(Some(value))`
+fn deserialize_optional_field<'de, T, D>(d: D) -> Result<Option<Option<T>>, D::Error>
+where
+    T: Deserialize<'de>,
+    D: Deserializer<'de>,
+{
+    Ok(Some(Option::<T>::deserialize(d)?))
+}
 
 /// Reject the request unless the actor is allowed to perform `action` outright
 /// (no override-PIN flow on admin pages).
@@ -153,7 +167,9 @@ pub struct StaffUpdate {
     /// New PIN. Re-hashed when present; left untouched when absent.
     pub pin: Option<String>,
     pub role: Option<Role>,
-    /// `Some(None)` clears the team; `None` leaves it untouched.
+    /// `Some(None)` clears the team (JSON `null`); `None` leaves it untouched
+    /// (field absent from request body).
+    #[serde(default, deserialize_with = "deserialize_optional_field")]
     pub team: Option<Option<String>>,
 }
 
@@ -386,6 +402,13 @@ async fn get_settings(
     Ok(Json(out))
 }
 
+/// Persist edited settings to the master DB.
+///
+/// Caveat: the in-memory `state.settings` snapshot is NOT updated here.
+/// Subsystems that read `state.settings` (notably the EOD scheduler's
+/// cutoff/tz) continue to use the values loaded at startup until the app is
+/// restarted. Endpoints that re-load via `Settings::load(&master)` per call
+/// (e.g. `get_settings`) will see the new values immediately.
 async fn update_settings(
     State(state): State<Arc<AppState>>,
     AuthCtx(claims): AuthCtx,

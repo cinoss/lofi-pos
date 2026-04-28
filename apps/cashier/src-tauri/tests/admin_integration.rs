@@ -488,6 +488,73 @@ async fn ui_admin_serves_index_html_with_spa_fallback() {
 }
 
 #[tokio::test]
+async fn admin_staff_update_team_null_clears_team_absent_leaves_it() {
+    let rig = boot_admin_rig().await;
+    let token = login(&rig, &rig.owner_pin).await;
+    let bearer = format!("Bearer {token}");
+
+    // Create staff with team=A.
+    let created: Value = rig
+        .client
+        .post(format!("{}/admin/staff", rig.base_url))
+        .header("authorization", &bearer)
+        .json(&json!({
+            "name": "Alice",
+            "pin": "234567",
+            "role": "staff",
+            "team": "A",
+        }))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let id = created["id"].as_i64().unwrap();
+    assert_eq!(created["team"], "A");
+
+    // PUT without `team` field — must leave team alone (still "A").
+    let resp = rig
+        .client
+        .put(format!("{}/admin/staff/{id}", rig.base_url))
+        .header("authorization", &bearer)
+        .json(&json!({ "name": "Alice2" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["name"], "Alice2");
+    assert_eq!(body["team"], "A", "absent team field must not clear team");
+
+    // PUT with `team: null` — must clear team.
+    let resp = rig
+        .client
+        .put(format!("{}/admin/staff/{id}", rig.base_url))
+        .header("authorization", &bearer)
+        .json(&json!({ "team": null }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    assert!(body["team"].is_null(), "team:null must clear (got {:?})", body["team"]);
+
+    // PUT with `team: "B"` — must set to B.
+    let resp = rig
+        .client
+        .put(format!("{}/admin/staff/{id}", rig.base_url))
+        .header("authorization", &bearer)
+        .json(&json!({ "team": "B" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["team"], "B");
+}
+
+#[tokio::test]
 async fn admin_reports_list_empty_then_get_404() {
     let rig = boot_admin_rig().await;
     let token = login(&rig, &rig.owner_pin).await;
