@@ -15,6 +15,14 @@ fn main() {
         }
         return;
     }
+    if args.get(1).is_some_and(|a| a == "eod-now") {
+        let day = args.get(2).cloned();
+        if let Err(e) = cashier_lib::cli::run_eod_now(day) {
+            eprintln!("eod-now failed: {e}");
+            std::process::exit(1);
+        }
+        return;
+    }
 
     cashier_lib::run();
 }

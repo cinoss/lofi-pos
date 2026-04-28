@@ -3,6 +3,7 @@ pub mod app_state;
 pub mod auth;
 pub mod bootstrap;
 pub mod business_day;
+pub mod cli;
 pub mod crypto;
 pub mod domain;
 pub mod eod;
@@ -134,6 +135,10 @@ pub fn run() {
                     tracing::error!(?e, "http server exited with error");
                 }
             });
+
+            // Plan F: spawn the EOD scheduler on the same runtime. Performs
+            // startup catch-up immediately, then loops on next_cutoff.
+            eod::scheduler::spawn(app_state.clone());
 
             Ok(())
         })
