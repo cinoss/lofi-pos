@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { Role } from "./common";
 
-export const LoginInput = z.object({ pin: z.string().min(6) }).strict();
+export const MIN_PIN_LEN = 6;
+export const LoginInput = z.object({ pin: z.string().min(MIN_PIN_LEN) }).strict();
 export type LoginInput = z.infer<typeof LoginInput>;
 
 export const TokenClaims = z.object({

@@ -5,5 +5,6 @@ export * from "./schemas/session";
 export * from "./schemas/order";
 export * from "./schemas/payment";
 export * from "./schemas/catalog";
+export * from "./schemas/settings";
 export * from "./client";
 export * from "./ws";
