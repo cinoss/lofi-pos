@@ -1,0 +1,23 @@
+{
+  "$schema": "https://ui.shadcn.com/schema.json",
+  "style": "base-lyra",
+  "rsc": false,
+  "tsx": true,
+  "tailwind": {
+    "config": "",
+    "css": "src/styles/globals.css",
+    "baseColor": "neutral",
+    "cssVariables": true
+  },
+  "iconLibrary": "lucide",
+  "aliases": {
+    "components": "@lofi-pos/ui/components",
+    "utils": "@lofi-pos/ui/lib/utils",
+    "hooks": "@lofi-pos/ui/hooks",
+    "lib": "@lofi-pos/ui/lib",
+    "ui": "@lofi-pos/ui/components"
+  },
+  "rtl": false,
+  "menuColor": "default",
+  "menuAccent": "bold"
+}
