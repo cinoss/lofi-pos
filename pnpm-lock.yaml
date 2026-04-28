@@ -125,6 +125,40 @@ importers:
         specifier: ^7.3.2
         version: 7.3.2(@types/node@25.3.0)(jiti@2.6.1)(lightningcss@1.31.1)
 
+  packages/pos-ui:
+    dependencies:
+      '@lofi-pos/shared':
+        specifier: workspace:*
+        version: link:../shared
+      '@lofi-pos/ui':
+        specifier: workspace:*
+        version: link:../ui
+      '@tanstack/react-query':
+        specifier: ^5.59.0
+        version: 5.100.5(react@19.2.4)
+      react:
+        specifier: ^19.2.4
+        version: 19.2.4
+      react-dom:
+        specifier: ^19.2.4
+        version: 19.2.4(react@19.2.4)
+      react-router-dom:
+        specifier: ^6.27.0
+        version: 6.30.3(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+      zod:
+        specifier: ^3.23.0
+        version: 3.25.76
+    devDependencies:
+      '@types/react':
+        specifier: ^19.2.10
+        version: 19.2.14
+      '@types/react-dom':
+        specifier: ^19.2.3
+        version: 19.2.3(@types/react@19.2.14)
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+
   packages/shared:
     dependencies:
       zod:
