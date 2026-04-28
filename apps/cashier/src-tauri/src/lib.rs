@@ -8,6 +8,7 @@ pub mod domain;
 pub mod error;
 pub mod http;
 pub mod keychain;
+pub mod print;
 pub mod services;
 pub mod store;
 pub mod time;
