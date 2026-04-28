@@ -46,6 +46,16 @@ pub struct Spot {
     pub status: String,
 }
 
+/// Plan F: row returned from `daily_report`. The `*_json` columns are raw
+/// JSON strings (the serialized `Report` from `eod::builder`).
+#[derive(Debug, Clone, Serialize)]
+pub struct DailyReportRow {
+    pub business_day: String,
+    pub generated_at: i64,
+    pub order_summary_json: String,
+    pub inventory_summary_json: String,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct Product {
     pub id: i64,
@@ -367,6 +377,57 @@ impl Master {
             .query_map([], |r| r.get::<_, String>(0))?
             .collect::<Result<Vec<_>, _>>()?;
         Ok(days)
+    }
+
+    /// Plan F: read a `daily_report` row by `business_day`.
+    pub fn get_daily_report(&self, business_day: &str) -> AppResult<Option<DailyReportRow>> {
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT business_day, generated_at, order_summary_json, inventory_summary_json
+                 FROM daily_report WHERE business_day = ?1",
+                params![business_day],
+                |r| {
+                    Ok(DailyReportRow {
+                        business_day: r.get(0)?,
+                        generated_at: r.get(1)?,
+                        order_summary_json: r.get(2)?,
+                        inventory_summary_json: r.get(3)?,
+                    })
+                },
+            )
+            .optional()?)
+    }
+
+    /// Plan F: list `daily_report` rows newest-first (by generated_at).
+    pub fn list_daily_reports(&self) -> AppResult<Vec<DailyReportRow>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT business_day, generated_at, order_summary_json, inventory_summary_json
+             FROM daily_report ORDER BY business_day DESC",
+        )?;
+        let rows = stmt
+            .query_map([], |r| {
+                Ok(DailyReportRow {
+                    business_day: r.get(0)?,
+                    generated_at: r.get(1)?,
+                    order_summary_json: r.get(2)?,
+                    inventory_summary_json: r.get(3)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    /// Plan F: read the `status` column from `eod_runs` for `business_day`.
+    pub fn get_eod_runs_status(&self, business_day: &str) -> AppResult<Option<String>> {
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT status FROM eod_runs WHERE business_day = ?1",
+                params![business_day],
+                |r| r.get::<_, String>(0),
+            )
+            .optional()?)
     }
 
     /// All idempotency cache rows for a given business day. Used by warm-up

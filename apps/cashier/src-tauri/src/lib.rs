@@ -14,6 +14,7 @@ pub mod services;
 pub mod store;
 pub mod time;
 
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tauri::Manager;
 
@@ -90,6 +91,24 @@ pub fn run() {
                 broadcast_tx: broadcast_tx.clone(),
             };
 
+            // Plan F: reports go under <app_data_dir>/reports.
+            let reports_dir = data_dir.join("reports");
+
+            // Plan F: serve the admin SPA at /ui/admin/* from this directory.
+            // Order of resolution:
+            //   1. `LOFI_ADMIN_DIST` env var (dev override)
+            //   2. Tauri resource_dir + "admin/dist" (prod bundle)
+            //   3. <workspace>/apps/admin/dist (cargo run / dev fallback)
+            // If the chosen path does not exist the static handler simply
+            // 404s — `serve` logs a warning at startup so it's visible.
+            let admin_dist: PathBuf = if let Ok(p) = std::env::var("LOFI_ADMIN_DIST") {
+                PathBuf::from(p)
+            } else if let Ok(res) = app.path().resource_dir() {
+                res.join("admin").join("dist")
+            } else {
+                PathBuf::from("apps/admin/dist")
+            };
+
             let app_state = Arc::new(app_state::AppState {
                 kek,
                 master,
@@ -100,6 +119,8 @@ pub fn run() {
                 store,
                 settings,
                 broadcast_tx,
+                reports_dir,
+                admin_dist,
             });
 
             // Hand a clone to Tauri so future Rust-only callers (e.g., menu

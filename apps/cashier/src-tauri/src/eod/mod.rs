@@ -10,5 +10,6 @@ pub mod builder;
 pub mod business_day;
 pub mod runner;
 pub mod scheduler;
+pub mod test_support;
 
 pub use business_day::{business_day_for, days_between, next_cutoff_ms, Cfg};
