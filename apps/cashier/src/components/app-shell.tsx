@@ -1,13 +1,14 @@
 import { Link, Outlet } from "react-router-dom";
 import { Button } from "@lofi-pos/ui/components/button";
 import { useAuth } from "../lib/auth-context";
+import { useSettings } from "../lib/settings-context";
 import { useIdleTimer } from "../lib/idle-tracker";
-
-const IDLE_LOCK_MS = 10 * 60 * 1000; // hard-coded; load from settings later
 
 export function AppShell() {
   const { claims, lock, logout } = useAuth();
-  useIdleTimer(IDLE_LOCK_MS, lock);
+  const settings = useSettings();
+  const idleMs = (settings?.idle_lock_minutes ?? 10) * 60 * 1000;
+  useIdleTimer(idleMs, lock);
 
   return (
     <div className="min-h-screen flex flex-col">
