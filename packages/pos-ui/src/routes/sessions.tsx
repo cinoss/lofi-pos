@@ -2,9 +2,10 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { z } from "zod";
 import { SessionState } from "@lofi-pos/shared";
-import { apiClient } from "../lib/api";
+import { useApiClient } from "../api-context";
 
 export function SessionsRoute() {
+  const apiClient = useApiClient();
   const { data, isLoading, error } = useQuery({
     queryKey: ["sessions", "active"],
     queryFn: () => apiClient.get("/sessions/active", z.array(SessionState)),

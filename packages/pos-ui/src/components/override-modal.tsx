@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { PinPad } from "./pin-pad";
 import { Button } from "@lofi-pos/ui/components/button";
+import { PinPad } from "./pin-pad";
 
 interface Props {
   /** Role required to authorize, e.g., "manager". Shown in title. */

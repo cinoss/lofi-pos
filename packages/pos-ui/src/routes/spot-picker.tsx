@@ -3,14 +3,15 @@ import { useNavigate } from "react-router-dom";
 import { z } from "zod";
 import { Spot, SessionState } from "@lofi-pos/shared";
 import type { OpenSessionInput } from "@lofi-pos/shared";
-import { apiClient } from "../lib/api";
 import { Button } from "@lofi-pos/ui/components/button";
+import { useApiClient } from "../api-context";
 
 function newKey(): string {
   return crypto.randomUUID();
 }
 
 export function SpotPickerRoute() {
+  const apiClient = useApiClient();
   const qc = useQueryClient();
   const nav = useNavigate();
   const { data: spots } = useQuery({

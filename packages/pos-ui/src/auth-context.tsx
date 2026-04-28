@@ -9,10 +9,11 @@ import {
 import type { ReactNode } from "react";
 import { z } from "zod";
 import { useQueryClient } from "@tanstack/react-query";
+import type { QueryClient } from "@tanstack/react-query";
+import type { ApiClient } from "@lofi-pos/shared";
 import { LoginOutput, TokenClaims } from "@lofi-pos/shared";
 import type { TokenClaims as TokenClaimsType } from "@lofi-pos/shared";
-import { apiClient, getStoredToken, setStoredToken } from "./api";
-import { attachWS } from "./ws";
+import { setStoredToken, getStoredToken } from "./api";
 
 interface AuthContextValue {
   token: string | null;
@@ -27,54 +28,60 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-export function AuthProvider({ children }: { children: ReactNode }) {
+export interface AuthProviderProps {
+  client: ApiClient;
+  attachWS: (qc: QueryClient) => () => void;
+  children: ReactNode;
+}
+
+export function AuthProvider({ client, attachWS, children }: AuthProviderProps) {
   const [token, setToken] = useState<string | null>(getStoredToken());
   const [claims, setClaims] = useState<TokenClaimsType | null>(null);
   const [isLocked, setIsLocked] = useState(false);
   const qc = useQueryClient();
 
-  // Attach the WS subscription whenever we have a token; teardown when token clears
-  // or rotates. Prevents the "live updates dead until reload" bug where attachWS
-  // ran at module load with token=null.
+  // Attach WS whenever we have a token; teardown on token change/clear.
   useEffect(() => {
     if (!token) return;
     const teardown = attachWS(qc);
     return teardown;
-  }, [token, qc]);
+  }, [token, qc, attachWS]);
 
-  // On mount, if token exists, try /auth/me to recover claims.
+  // On mount, recover claims if token exists.
   useEffect(() => {
     if (!token) return;
-    apiClient
+    client
       .get("/auth/me", TokenClaims)
       .then(setClaims)
       .catch(() => {
-        // token invalid — clear
         setToken(null);
         setStoredToken(null);
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // intentionally only on mount
+  }, []); // mount only
 
-  const login = useCallback(async (pin: string) => {
-    const out = await apiClient.post("/auth/login", LoginOutput, { pin });
-    setToken(out.token);
-    setStoredToken(out.token);
-    setClaims(out.claims);
-    setIsLocked(false);
-  }, []);
+  const login = useCallback(
+    async (pin: string) => {
+      const out = await client.post("/auth/login", LoginOutput, { pin });
+      setToken(out.token);
+      setStoredToken(out.token);
+      setClaims(out.claims);
+      setIsLocked(false);
+    },
+    [client],
+  );
 
   const logout = useCallback(async () => {
     try {
-      await apiClient.post("/auth/logout", z.void());
+      await client.post("/auth/logout", z.void());
     } catch {
-      // ignore — we are tearing down regardless
+      // ignore — tearing down regardless
     }
     setToken(null);
     setClaims(null);
     setStoredToken(null);
     setIsLocked(false);
-  }, []);
+  }, [client]);
 
   const lock = useCallback(() => {
     setIsLocked(true);

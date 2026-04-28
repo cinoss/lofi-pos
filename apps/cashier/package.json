@@ -12,6 +12,7 @@
     "lint": "eslint ."
   },
   "dependencies": {
+    "@lofi-pos/pos-ui": "workspace:*",
     "@lofi-pos/shared": "workspace:*",
     "@lofi-pos/ui": "workspace:*",
     "@tanstack/react-query": "^5.59.0",

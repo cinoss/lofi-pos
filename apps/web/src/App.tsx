@@ -1,19 +1,40 @@
-import { Button } from "@lofi-pos/ui/components/button"
+import { Navigate, Route, Routes } from "react-router-dom";
+import {
+  useAuth,
+  AppShell,
+  LoginRoute,
+  LockRoute,
+  SessionsRoute,
+  SpotPickerRoute,
+  SessionDetailRoute,
+  PaymentRoute,
+} from "@lofi-pos/pos-ui";
 
-export function App() {
+export default function App() {
+  const { isAuthenticated, isLocked, token } = useAuth();
+  if (isLocked || (token && !isAuthenticated)) {
+    return (
+      <Routes>
+        <Route path="*" element={<LockRoute />} />
+      </Routes>
+    );
+  }
+  if (!isAuthenticated) {
+    return (
+      <Routes>
+        <Route path="*" element={<LoginRoute />} />
+      </Routes>
+    );
+  }
   return (
-    <div className="flex min-h-svh p-6">
-      <div className="flex max-w-md min-w-0 flex-col gap-4 text-sm leading-loose">
-        <div>
-          <h1 className="font-medium">Project ready!</h1>
-          <p>You may now add components and start building.</p>
-          <p>We&apos;ve already added the button component for you.</p>
-          <Button className="mt-2">Button</Button>
-        </div>
-        <div className="text-muted-foreground font-mono text-xs">
-          (Press <kbd>d</kbd> to toggle dark mode)
-        </div>
-      </div>
-    </div>
-  )
+    <Routes>
+      <Route element={<AppShell />}>
+        <Route path="/sessions" element={<SessionsRoute />} />
+        <Route path="/spots" element={<SpotPickerRoute />} />
+        <Route path="/sessions/:id" element={<SessionDetailRoute />} />
+        <Route path="/sessions/:id/payment" element={<PaymentRoute />} />
+        <Route path="*" element={<Navigate to="/sessions" replace />} />
+      </Route>
+    </Routes>
+  );
 }
