@@ -1,5 +1,7 @@
 # UUID Event IDs + Fake Session Noise — Implementation Plan
 
+> **SUPERSEDED.** Direction changed to a `bouncer` sidecar HTTP service that holds seeds (and printers + reports). Local UTC rotation, KEK in keychain, dek table, and noise injection all replaced by the simpler "derive DEK from sidecar seed + day" model. See `2026-04-29-bouncer-sidecar-design.md`. Do NOT execute this plan.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Two changes that ship together because one enables the other:
