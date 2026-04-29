@@ -139,6 +139,36 @@ Anyone running an older binary against a newer DB (or vice versa) breaks immedia
 
 ---
 
+## Threat model & SSD caveat
+
+The "crypto-shred at T+3 days" guarantee assumes deleting a `dek` row from SQLite makes the wrapped DEK unrecoverable. **On SSD media this is not reliable at the SQLite layer.** Wear-leveling and the FTL relocate writes physically; freed cells linger until block erase + GC, on the controller's schedule (minutes to days, sometimes longer). `PRAGMA secure_delete` overwrites *logical* pages with zeros, but the original physical NAND cells often remain readable to a forensic attacker with raw disk access.
+
+Realistic recovery against the current build, attacker who has the running cashier (or its disk + login password):
+
+| Layer | Live data | Forensically-recovered "deleted" data |
+|---|---|---|
+| KEK in OS keychain | accessible (logged-in user) | n/a — never on app's disk |
+| Wrapped DEKs in `master.dek` | last 4 days | older wrapped DEKs may persist in freed pages |
+| Event ciphertext in `events.event` | last 4 business days | older ciphertext may persist in freed pages |
+| Daily reports `reports/<day>.json` | **all of them, plaintext, forever** | n/a |
+
+Attacker chains `(live KEK) + (recovered wrapped DEK) + (recovered ciphertext)` to decrypt old events. The 4-day window is the *honest* upper bound only when free pages are not recoverable.
+
+**Mitigations that work on SSD:**
+
+1. **Full-disk encryption (Bitlocker / FileVault) — required for any real protection.** Drive controller sees only ciphertext, so freed cells contain ciphertext that's useless without the disk key. Removes the entire raw-sector-scan attack class regardless of what SQLite does.
+2. **Hardware-backed KEK (TPM-2 on Windows, Secure Enclave on macOS).** Prevents KEK extraction to a different machine even with disk + login password. Optional enhancement.
+3. **Reports are plaintext** — the largest leak surface for historical data. Restrict file ACLs at minimum; consider a separate retention-key encryption in a future spec.
+
+**Operational policy implied:**
+- FDE is a deployment prerequisite. Document in install guide.
+- Cashier process should run as non-admin user on Windows.
+- OS-level auto-lock in addition to the app's idle lock.
+
+`PRAGMA secure_delete` is intentionally NOT enabled — on SSD it gives false comfort without real protection, and on FDE-protected disks it's redundant. The hardening that matters lives below SQLite (the disk) and above it (the keychain).
+
+---
+
 ## Out of scope
 
 - **Tor / `arti` / `.onion` hidden service exposure.** If the original brief intended this (remote management without port forwarding), it warrants its own spec. Touchpoints: axum binding, Tauri sidecar process for arti, key publication. Wholly orthogonal to crypto rotation.
