@@ -1,206 +1,114 @@
-//! UTC-day-keyed Data Encryption Key manager.
+//! Business-day-keyed Data Encryption Key derivation.
 //!
-//! Replaces the old `services::day_key` helper. Two responsibilities:
+//! After the bouncer integration there are no on-disk DEK rows. Instead
+//! every DEK is derived deterministically from a seed (held in the
+//! [`SeedCache`]) and the event's business_day:
 //!
-//! 1. **Lookup / lazy-create today's DEK** for the encrypt path. The on-disk
-//!    representation is a wrapped DEK in `master.dek` keyed by UTC calendar
-//!    day. First write of the day generates a fresh random DEK, wraps it under
-//!    the KEK, and persists; subsequent writes hit the existing row.
-//! 2. **Rotation** — invoked by `rotation::scheduler` at every UTC midnight.
-//!    Ensures today's DEK exists (catch-up after restart) and prunes any DEK
-//!    older than `KEY_TTL_DAYS` UTC days, providing the crypto-shred guarantee
-//!    independently of the EOD pipeline.
+//! ```text
+//! dek = blake3_keyed(seed, business_day)
+//! ```
+//!
+//! The cashier ships with a hard-coded fallback seed; if the bouncer is
+//! reachable, real seeds replace the default. Tagged onto each event row
+//! is the `seed_id` used at write time, so reads pick the right seed.
 
-use crate::crypto::{Dek, Kek};
-use crate::error::{AppError, AppResult};
-use crate::services::utc_day::{days_ago, utc_day_of};
-use crate::store::master::Master;
-use std::sync::{Arc, Mutex};
+use crate::bouncer::seed_cache::SeedCache;
+use crate::crypto::Dek;
+use crate::error::AppResult;
+use std::sync::Arc;
 
-/// DEK retention window. Boundary semantics:
-/// - `rotate()` retains DEKs for `today, today-1, ..., today-KEY_TTL_DAYS` (4 keys with TTL=3).
-/// - `today - KEY_TTL_DAYS - 1` and older are pruned.
-/// - I.e., a key from exactly `KEY_TTL_DAYS` days ago is **kept** for one more
-///   rotation; a key strictly older is pruned (via `delete_deks_older_than(<)`).
-/// Effective worst-case decrypt window for newly-encrypted events: just over
-/// `KEY_TTL_DAYS + 1` calendar days.
-pub const KEY_TTL_DAYS: i64 = 3;
-
-/// UTC-day key manager.
-///
-/// Cheap to clone (everything behind `Arc`). Hold via `Arc<KeyManager>` in
-/// `AppState` and pass into `EventService` and the rotation scheduler.
 pub struct KeyManager {
-    master: Arc<Mutex<Master>>,
-    kek: Arc<Kek>,
-}
-
-/// Outcome of a single `rotate()` invocation. Passed to the tracing layer so
-/// ops can see what the scheduler actually did at each tick.
-#[derive(Debug)]
-pub struct RotationReport {
-    pub today: String,
-    pub created_today: bool,
-    pub deleted: Vec<String>,
+    cache: Arc<SeedCache>,
 }
 
 impl KeyManager {
-    pub fn new(master: Arc<Mutex<Master>>, kek: Arc<Kek>) -> Self {
-        Self { master, kek }
+    pub fn new(cache: Arc<SeedCache>) -> Self {
+        Self { cache }
     }
 
-    /// Return the DEK for `utc_day_of(now_ms)`. Lazily creates and persists
-    /// the row on the very first write of a UTC day.
-    pub fn current_dek(&self, now_ms: i64) -> AppResult<Dek> {
-        let day = utc_day_of(now_ms);
-        self.get_or_create(&day, now_ms)
+    /// DEK + seed_id for encrypting an event written today.
+    pub fn current_dek(&self, business_day: &str) -> (Dek, String) {
+        let seed = self.cache.default_seed();
+        (
+            derive_dek(seed, business_day),
+            self.cache.default_id().to_string(),
+        )
     }
 
-    /// Look up the DEK persisted for `utc_day`. Returns `Crypto("key
-    /// expired …")` if no row exists — the read path treats missing-key the
-    /// same as a tampered ciphertext.
-    pub fn dek_for(&self, utc_day: &str) -> AppResult<Dek> {
-        let m = self.master.lock().unwrap();
-        let wrapped = m
-            .get_dek(utc_day)?
-            .ok_or_else(|| AppError::Crypto(format!("key expired for {utc_day}")))?;
-        self.kek.unwrap(&wrapped)
+    /// DEK for decrypting an event tagged with `seed_id` and `business_day`.
+    /// Returns `Crypto("seed expired …")` if the seed is no longer in the cache.
+    pub fn dek_for(&self, seed_id: &str, business_day: &str) -> AppResult<Dek> {
+        let seed = self.cache.get(seed_id)?;
+        Ok(derive_dek(seed, business_day))
     }
+}
 
-    /// One rotation pass:
-    ///   1. Ensure today's DEK exists (catch-up at startup or across midnight).
-    ///   2. Delete any DEK whose `utc_day < today − KEY_TTL_DAYS`.
-    ///
-    /// Idempotent: a second consecutive call on the same UTC day reports no
-    /// new creation and no deletions.
-    pub fn rotate(&self, now_ms: i64) -> AppResult<RotationReport> {
-        let today = utc_day_of(now_ms);
-        let created_today = self.ensure_dek_inserted(&today, now_ms)?;
-        let oldest_keep = days_ago(&today, KEY_TTL_DAYS);
-        let deleted = {
-            let m = self.master.lock().unwrap();
-            m.delete_deks_older_than(&oldest_keep)?
-        };
-        Ok(RotationReport {
-            today,
-            created_today,
-            deleted,
-        })
-    }
-
-    fn get_or_create(&self, utc_day: &str, now_ms: i64) -> AppResult<Dek> {
-        let m = self.master.lock().unwrap();
-        if let Some(wrapped) = m.get_dek(utc_day)? {
-            return self.kek.unwrap(&wrapped);
-        }
-        let dek = Dek::new_random();
-        let wrapped = self.kek.wrap(&dek)?;
-        let inserted = m.put_dek(utc_day, &wrapped, now_ms)?;
-        if inserted {
-            Ok(dek)
-        } else {
-            // Lost the race; another writer beat us. Read theirs.
-            let stored = m.get_dek(utc_day)?.ok_or(AppError::NotFound)?;
-            self.kek.unwrap(&stored)
-        }
-    }
-
-    /// Like `get_or_create` but returns whether a row was newly inserted, so
-    /// `rotate()` can report `created_today = true/false` without leaking the
-    /// DEK material.
-    fn ensure_dek_inserted(&self, utc_day: &str, now_ms: i64) -> AppResult<bool> {
-        let m = self.master.lock().unwrap();
-        if m.get_dek(utc_day)?.is_some() {
-            return Ok(false);
-        }
-        let dek = Dek::new_random();
-        let wrapped = self.kek.wrap(&dek)?;
-        m.put_dek(utc_day, &wrapped, now_ms)
-    }
-
-    /// Test-only seam: create a DEK at an explicit historical `utc_day`. Used
-    /// by tests that need to pre-populate "old" rows so `rotate()` has
-    /// something to prune.
-    #[cfg(test)]
-    pub fn current_dek_at(&self, utc_day: &str, now_ms: i64) -> AppResult<Dek> {
-        self.get_or_create(utc_day, now_ms)
-    }
+fn derive_dek(seed: &[u8; 32], business_day: &str) -> Dek {
+    let mut hasher = blake3::Hasher::new_keyed(seed);
+    hasher.update(business_day.as_bytes());
+    let out = hasher.finalize();
+    Dek::from_bytes(out.as_bytes()).expect("blake3 output is 32 bytes")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::crypto::Kek;
-    use crate::store::master::Master;
-    use std::sync::{Arc, Mutex};
+    use crate::error::AppError;
 
-    fn rig() -> KeyManager {
-        let master = Arc::new(Mutex::new(Master::open_in_memory().unwrap()));
-        let kek = Arc::new(Kek::new_random());
-        KeyManager::new(master, kek)
-    }
-
-    fn ts(y: i32, m: u32, d: u32) -> i64 {
-        use chrono::TimeZone;
-        chrono::Utc
-            .with_ymd_and_hms(y, m, d, 12, 0, 0)
-            .unwrap()
-            .timestamp_millis()
+    fn cache() -> Arc<SeedCache> {
+        Arc::new(SeedCache::from_seeds(
+            "primary",
+            vec![
+                ("primary".into(), [1u8; 32]),
+                ("secondary".into(), [2u8; 32]),
+            ],
+        ))
     }
 
     #[test]
-    fn current_dek_creates_on_first_call() {
-        let km = rig();
-        let d1 = km.current_dek(ts(2026, 4, 28)).unwrap();
-        let d2 = km.current_dek(ts(2026, 4, 28)).unwrap();
-        assert_eq!(d1.as_bytes(), d2.as_bytes());
+    fn current_dek_roundtrips_with_dek_for_for_same_inputs() {
+        let km = KeyManager::new(cache());
+        let (dek, seed_id) = km.current_dek("2026-04-28");
+        let blob = dek.encrypt(b"hi", b"aad").unwrap();
+        let dek2 = km.dek_for(&seed_id, "2026-04-28").unwrap();
+        assert_eq!(dek2.decrypt(&blob, b"aad").unwrap(), b"hi");
     }
 
     #[test]
-    fn current_dek_differs_per_utc_day() {
-        let km = rig();
-        let d1 = km.current_dek(ts(2026, 4, 28)).unwrap();
-        let d2 = km.current_dek(ts(2026, 4, 29)).unwrap();
-        assert_ne!(d1.as_bytes(), d2.as_bytes());
-    }
-
-    #[test]
-    fn dek_for_returns_key_expired_if_missing() {
-        let km = rig();
-        let res = km.dek_for("1999-01-01");
-        match res {
-            Err(AppError::Crypto(msg)) => assert!(msg.contains("key expired")),
-            Err(e) => panic!("expected Crypto(\"key expired\"), got {e}"),
-            Ok(_) => panic!("expected error, got Ok"),
+    fn dek_for_unknown_seed_returns_crypto_error() {
+        let km = KeyManager::new(cache());
+        let err = km
+            .dek_for("never-existed", "2026-04-28")
+            .err()
+            .expect("expected error");
+        match err {
+            AppError::Crypto(msg) => assert!(msg.contains("seed expired")),
+            other => panic!("expected Crypto, got {other:?}"),
         }
     }
 
     #[test]
-    fn rotate_creates_today_and_prunes_older_than_3_days() {
-        let km = rig();
-        // Pre-seed 5 days of historic keys. Today = 2026-04-28; with
-        // KEY_TTL_DAYS=3, oldest_keep = 2026-04-25, so 22/23/24 are pruned.
-        for d in &[
-            "2026-04-22",
-            "2026-04-23",
-            "2026-04-24",
-            "2026-04-25",
-            "2026-04-26",
-        ] {
-            km.current_dek_at(d, ts(2026, 4, 22)).unwrap();
-        }
-        let report = km.rotate(ts(2026, 4, 28)).unwrap();
-        assert_eq!(report.deleted, vec!["2026-04-22", "2026-04-23", "2026-04-24"]);
-        assert!(report.created_today);
+    fn different_days_yield_different_deks() {
+        let km = KeyManager::new(cache());
+        let (a, _) = km.current_dek("2026-04-28");
+        let (b, _) = km.current_dek("2026-04-29");
+        let blob = a.encrypt(b"x", b"a").unwrap();
+        assert!(b.decrypt(&blob, b"a").is_err());
     }
 
     #[test]
-    fn rotate_idempotent() {
-        let km = rig();
-        let r1 = km.rotate(ts(2026, 4, 28)).unwrap();
-        let r2 = km.rotate(ts(2026, 4, 28)).unwrap();
-        assert!(r1.created_today);
-        assert!(!r2.created_today);
-        assert!(r2.deleted.is_empty());
+    fn different_seeds_yield_different_deks() {
+        let km = KeyManager::new(cache());
+        let a = km.dek_for("primary", "2026-04-28").unwrap();
+        let b = km.dek_for("secondary", "2026-04-28").unwrap();
+        let blob = a.encrypt(b"x", b"a").unwrap();
+        assert!(b.decrypt(&blob, b"a").is_err());
+    }
+
+    #[test]
+    fn current_dek_uses_cache_default_id() {
+        let km = KeyManager::new(cache());
+        let (_, sid) = km.current_dek("2026-04-28");
+        assert_eq!(sid, "primary");
     }
 }

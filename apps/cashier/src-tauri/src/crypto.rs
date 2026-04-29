@@ -13,63 +13,34 @@ pub const NONCE_LEN: usize = 12;
 /// AES-GCM authentication tag length in bytes.
 pub const TAG_LEN: usize = 16;
 
-/// Key Encryption Key. Wraps per-day DEKs. Stored in the OS keychain; lives
-/// for the application's installed lifetime.
-#[derive(ZeroizeOnDrop)]
-pub struct Kek([u8; KEY_LEN]);
-
-/// Data Encryption Key. Random per business day. Wrapped under the KEK and
-/// stored in `master.day_key`. Deleted at end-of-day to crypto-shred that
-/// day's events.
+/// Data Encryption Key. Derived deterministically per business day from a
+/// seed held in the bouncer-backed `SeedCache`. Never persisted in the
+/// cashier — recomputed on demand from `(seed, business_day)`.
 #[derive(ZeroizeOnDrop)]
 pub struct Dek([u8; KEY_LEN]);
 
-impl Kek {
-    /// Generate a fresh random KEK from the OS CSPRNG.
+impl Dek {
+    /// Generate a fresh random DEK from the OS CSPRNG. Used by tests; the
+    /// production path always derives via `KeyManager`.
     pub fn new_random() -> Self {
         let mut k = [0u8; KEY_LEN];
         rand::thread_rng().fill_bytes(&mut k);
         Self(k)
     }
-    /// Reconstruct a KEK from raw bytes; rejects any length other than `KEY_LEN`.
+
+    /// Reconstruct a DEK from raw bytes (e.g. blake3 output). Rejects any
+    /// length other than `KEY_LEN`.
     pub fn from_bytes(b: &[u8]) -> AppResult<Self> {
         if b.len() != KEY_LEN {
-            return Err(AppError::Crypto("bad kek length".into()));
+            return Err(AppError::Crypto("bad dek length".into()));
         }
         let mut k = [0u8; KEY_LEN];
         k.copy_from_slice(b);
         Ok(Self(k))
     }
-    /// Borrow the raw key material (only used to persist into the keystore).
-    pub fn as_bytes(&self) -> &[u8; KEY_LEN] {
-        &self.0
-    }
 
-    /// Wrap a DEK with this KEK using AES-GCM. Output: nonce || ct || tag.
-    pub fn wrap(&self, dek: &Dek) -> AppResult<Vec<u8>> {
-        encrypt(&self.0, dek.as_bytes(), b"dek-wrap")
-    }
-    /// Unwrap a DEK previously produced by `wrap`. Returns an error if the
-    /// GCM authentication tag does not verify (wrong KEK or tampered blob).
-    pub fn unwrap(&self, blob: &[u8]) -> AppResult<Dek> {
-        let pt = decrypt(&self.0, blob, b"dek-wrap")?;
-        if pt.len() != KEY_LEN {
-            return Err(AppError::Crypto("bad wrapped dek".into()));
-        }
-        let mut k = [0u8; KEY_LEN];
-        k.copy_from_slice(&pt);
-        Ok(Dek(k))
-    }
-}
-
-impl Dek {
-    /// Generate a fresh random DEK from the OS CSPRNG.
-    pub fn new_random() -> Self {
-        let mut k = [0u8; KEY_LEN];
-        rand::thread_rng().fill_bytes(&mut k);
-        Self(k)
-    }
-    /// Borrow the raw key material (only used by `Kek::wrap`).
+    /// Borrow the raw key material (only used by tests).
+    #[cfg(test)]
     pub fn as_bytes(&self) -> &[u8; KEY_LEN] {
         &self.0
     }
@@ -156,26 +127,14 @@ mod tests {
     }
 
     #[test]
-    fn kek_wrap_unwrap_roundtrip() {
-        let kek = Kek::new_random();
-        let dek = Dek::new_random();
-        let wrapped = kek.wrap(&dek).unwrap();
-        let dek2 = kek.unwrap(&wrapped).unwrap();
-        assert_eq!(dek.as_bytes(), dek2.as_bytes());
-    }
-
-    #[test]
-    fn kek_unwrap_with_wrong_kek_fails() {
-        let k1 = Kek::new_random();
-        let k2 = Kek::new_random();
-        let dek = Dek::new_random();
-        let wrapped = k1.wrap(&dek).unwrap();
-        assert!(k2.unwrap(&wrapped).is_err());
+    fn dek_from_bytes_rejects_wrong_length() {
+        assert!(Dek::from_bytes(&[0u8; 31]).is_err());
+        assert!(Dek::from_bytes(&[0u8; 33]).is_err());
+        assert!(Dek::from_bytes(&[0u8; 32]).is_ok());
     }
 
     #[test]
     fn nonce_uniqueness_smoke() {
-        // 10k encryptions, no collision (statistical, not exhaustive)
         let dek = Dek::new_random();
         let mut seen = std::collections::HashSet::new();
         for _ in 0..10_000 {
@@ -183,13 +142,6 @@ mod tests {
             let nonce = blob[..NONCE_LEN].to_vec();
             assert!(seen.insert(nonce), "nonce collision");
         }
-    }
-
-    #[test]
-    fn kek_from_bytes_rejects_wrong_length() {
-        assert!(Kek::from_bytes(&[0u8; 31]).is_err());
-        assert!(Kek::from_bytes(&[0u8; 33]).is_err());
-        assert!(Kek::from_bytes(&[0u8; 32]).is_ok());
     }
 
     use proptest::prelude::*;

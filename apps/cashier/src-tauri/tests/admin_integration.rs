@@ -7,7 +7,8 @@ use cashier_lib::acl::Role;
 use cashier_lib::app_state::{AppState, Settings};
 use cashier_lib::auth::pin::hash_pin;
 use cashier_lib::auth::AuthService;
-use cashier_lib::crypto::Kek;
+use cashier_lib::bouncer::client::BouncerClient;
+use cashier_lib::bouncer::seed_cache::SeedCache;
 use cashier_lib::http::server::build_router;
 use cashier_lib::services::command_service::CommandService;
 use cashier_lib::services::event_service::EventService;
@@ -32,7 +33,14 @@ struct Rig {
 async fn boot_admin_rig() -> Rig {
     let master = Arc::new(Mutex::new(Master::open_in_memory().unwrap()));
     let events = Arc::new(EventStore::open_in_memory().unwrap());
-    let kek = Arc::new(Kek::new_random());
+    let seed_cache = Arc::new(SeedCache::from_seeds("test", vec![("test".into(), [42u8; 32])]));
+    // BouncerClient eagerly builds a reqwest::blocking client; construct it
+    // off-runtime so the inner tokio runtime can be dropped cleanly later.
+    let bouncer = Arc::new(
+        tokio::task::spawn_blocking(|| BouncerClient::new("http://127.0.0.1:1"))
+            .await
+            .unwrap(),
+    );
     let mock_clock = Arc::new(MockClock::at_ymd_hms(2026, 4, 27, 12, 0, 0));
     let clock: Arc<dyn Clock> = mock_clock.clone();
     let tz = FixedOffset::east_opt(7 * 3600).unwrap();
@@ -49,10 +57,7 @@ async fn boot_admin_rig() -> Rig {
             .unwrap();
     }
 
-    let key_manager = Arc::new(cashier_lib::services::key_manager::KeyManager::new(
-        master.clone(),
-        kek.clone(),
-    ));
+    let key_manager = Arc::new(cashier_lib::services::key_manager::KeyManager::new(seed_cache.clone()));
     let event_service = EventService {
         events: events.clone(),
         key_manager: key_manager.clone(),
@@ -82,7 +87,8 @@ async fn boot_admin_rig() -> Rig {
     let settings = Arc::new(Settings::load(&master.lock().unwrap()).unwrap());
     let tmp = tempfile::tempdir().unwrap();
     let app_state = Arc::new(AppState {
-        kek,
+        seed_cache,
+        bouncer,
         master,
         events,
         key_manager,
@@ -92,7 +98,6 @@ async fn boot_admin_rig() -> Rig {
         store,
         settings,
         broadcast_tx,
-        reports_dir: tmp.path().join("reports"),
         admin_dist: tmp.path().join("admin_dist"),
     });
     std::mem::forget(tmp);
@@ -129,7 +134,7 @@ async fn login(rig: &Rig, pin: &str) -> String {
     v["token"].as_str().unwrap().to_string()
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn admin_spot_crud_owner_can_create_update_delete() {
     let rig = boot_admin_rig().await;
     let token = login(&rig, &rig.owner_pin).await;
@@ -200,7 +205,7 @@ async fn admin_spot_crud_owner_can_create_update_delete() {
     assert_eq!(resp.status(), 204);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn admin_spot_create_forbidden_for_cashier() {
     let rig = boot_admin_rig().await;
     let token = login(&rig, &rig.cashier_pin).await;
@@ -217,7 +222,7 @@ async fn admin_spot_create_forbidden_for_cashier() {
     assert_eq!(resp.status(), 401);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn admin_staff_crud_owner_can_create_and_list() {
     let rig = boot_admin_rig().await;
     let token = login(&rig, &rig.owner_pin).await;
@@ -266,7 +271,7 @@ async fn admin_staff_crud_owner_can_create_and_list() {
     assert_eq!(resp.status(), 204);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn admin_staff_create_forbidden_for_cashier() {
     let rig = boot_admin_rig().await;
     let token = login(&rig, &rig.cashier_pin).await;
@@ -283,7 +288,7 @@ async fn admin_staff_create_forbidden_for_cashier() {
     assert_eq!(resp.status(), 401);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn admin_product_crud_owner_can_create_update_delete() {
     let rig = boot_admin_rig().await;
     let token = login(&rig, &rig.owner_pin).await;
@@ -329,7 +334,7 @@ async fn admin_product_crud_owner_can_create_update_delete() {
     assert_eq!(resp.status(), 204);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn admin_product_create_forbidden_for_cashier() {
     let rig = boot_admin_rig().await;
     let token = login(&rig, &rig.cashier_pin).await;
@@ -346,7 +351,7 @@ async fn admin_product_create_forbidden_for_cashier() {
     assert_eq!(resp.status(), 401);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn admin_settings_get_and_update() {
     let rig = boot_admin_rig().await;
     let token = login(&rig, &rig.owner_pin).await;
@@ -382,7 +387,7 @@ async fn admin_settings_get_and_update() {
     assert_eq!(after["discount_threshold_pct"], 20);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn admin_settings_update_forbidden_for_cashier() {
     let rig = boot_admin_rig().await;
     let token = login(&rig, &rig.cashier_pin).await;
@@ -397,21 +402,23 @@ async fn admin_settings_update_forbidden_for_cashier() {
     assert_eq!(resp.status(), 401);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn ui_admin_serves_index_html_with_spa_fallback() {
     // Build a fresh rig and seed an admin_dist with a stub index.html, so
     // we can prove ServeDir is mounted and the SPA fallback fires for
     // unknown paths.
     let master = Arc::new(Mutex::new(Master::open_in_memory().unwrap()));
     let events = Arc::new(EventStore::open_in_memory().unwrap());
-    let kek = Arc::new(Kek::new_random());
+    let seed_cache = Arc::new(SeedCache::from_seeds("test", vec![("test".into(), [42u8; 32])]));
+    let bouncer = Arc::new(
+        tokio::task::spawn_blocking(|| BouncerClient::new("http://127.0.0.1:1"))
+            .await
+            .unwrap(),
+    );
     let mock_clock = Arc::new(MockClock::at_ymd_hms(2026, 4, 27, 12, 0, 0));
     let clock: Arc<dyn Clock> = mock_clock.clone();
     let tz = FixedOffset::east_opt(7 * 3600).unwrap();
-    let key_manager = Arc::new(cashier_lib::services::key_manager::KeyManager::new(
-        master.clone(),
-        kek.clone(),
-    ));
+    let key_manager = Arc::new(cashier_lib::services::key_manager::KeyManager::new(seed_cache.clone()));
     let event_service = EventService {
         events: events.clone(),
         key_manager: key_manager.clone(),
@@ -444,7 +451,8 @@ async fn ui_admin_serves_index_html_with_spa_fallback() {
     std::fs::create_dir_all(&admin_dist).unwrap();
     std::fs::write(admin_dist.join("index.html"), "<html>hi from admin</html>").unwrap();
     let app_state = Arc::new(AppState {
-        kek,
+        seed_cache,
+        bouncer,
         master,
         events,
         key_manager,
@@ -454,7 +462,6 @@ async fn ui_admin_serves_index_html_with_spa_fallback() {
         store,
         settings,
         broadcast_tx,
-        reports_dir: tmp.path().join("reports"),
         admin_dist: admin_dist.clone(),
     });
     std::mem::forget(tmp);
@@ -495,7 +502,7 @@ async fn ui_admin_serves_index_html_with_spa_fallback() {
     assert!(body.contains("hi from admin"));
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn admin_staff_update_team_null_clears_team_absent_leaves_it() {
     let rig = boot_admin_rig().await;
     let token = login(&rig, &rig.owner_pin).await;
@@ -562,43 +569,27 @@ async fn admin_staff_update_team_null_clears_team_absent_leaves_it() {
     assert_eq!(body["team"], "B");
 }
 
-#[tokio::test]
-async fn admin_reports_list_empty_then_get_404() {
+#[tokio::test(flavor = "multi_thread")]
+async fn admin_reports_route_is_gone() {
+    // Reports moved off-box to the bouncer; the cashier no longer mounts the
+    // /admin/reports route at all.
     let rig = boot_admin_rig().await;
     let token = login(&rig, &rig.owner_pin).await;
-    let bearer = format!("Bearer {token}");
-    let list: Value = rig
-        .client
-        .get(format!("{}/admin/reports", rig.base_url))
-        .header("authorization", &bearer)
-        .send()
-        .await
-        .unwrap()
-        .json()
-        .await
-        .unwrap();
-    assert_eq!(list.as_array().unwrap().len(), 0);
     let resp = rig
         .client
-        .get(format!("{}/admin/reports/2026-04-27", rig.base_url))
-        .header("authorization", &bearer)
+        .get(format!("{}/admin/reports", rig.base_url))
+        .header("authorization", format!("Bearer {token}"))
         .send()
         .await
         .unwrap();
     assert_eq!(resp.status(), 404);
 }
 
-#[tokio::test]
-async fn admin_keys_lists_current_dek_days() {
-    // Pre-seed two DEK rows on the rig's master DB so the listing has
-    // deterministic content. The HTTP endpoint just exposes whatever
-    // `list_dek_days` returns.
+#[tokio::test(flavor = "multi_thread")]
+async fn admin_keys_route_is_gone() {
+    // Keys live in the bouncer; cashier no longer exposes them.
     let rig = boot_admin_rig().await;
     let token = login(&rig, &rig.owner_pin).await;
-    // Reach into a fresh AppState built the same way? No — we don't have a
-    // handle to it from here. Instead, drive the endpoint and assert the
-    // response shape: an array (possibly empty) whose elements have utc_day
-    // and created_at.
     let resp = rig
         .client
         .get(format!("{}/admin/keys", rig.base_url))
@@ -606,25 +597,5 @@ async fn admin_keys_lists_current_dek_days() {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status(), 200);
-    let v: Value = resp.json().await.unwrap();
-    let arr = v.as_array().expect("response must be array");
-    for entry in arr {
-        assert!(entry.get("utc_day").is_some());
-        assert!(entry.get("created_at").is_some());
-    }
-}
-
-#[tokio::test]
-async fn admin_keys_forbidden_for_non_owner() {
-    let rig = boot_admin_rig().await;
-    let token = login(&rig, &rig.cashier_pin).await;
-    let resp = rig
-        .client
-        .get(format!("{}/admin/keys", rig.base_url))
-        .header("authorization", format!("Bearer {token}"))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), 401);
+    assert_eq!(resp.status(), 404);
 }

@@ -2,7 +2,6 @@ use crate::business_day::business_day_of;
 use crate::domain::event::DomainEvent;
 use crate::error::AppResult;
 use crate::services::key_manager::KeyManager;
-use crate::services::utc_day::utc_day_of;
 use crate::store::events::{AppendEvent, EventStore};
 use crate::time::Clock;
 use chrono::DateTime;
@@ -10,14 +9,9 @@ use chrono::FixedOffset;
 use chrono::Utc;
 use std::sync::Arc;
 
-// Note: `business_day_of` requires a `FixedOffset` parameter (Wave 1 fix). The venue's
-// fixed timezone offset is supplied at construction; production wires it from the
-// `business_day_tz_offset_seconds` setting.
-//
-// `key_manager` owns the wrapped-DEK lifecycle (UTC-day-keyed, 3-day TTL,
-// rotation service in `crate::rotation`). `business_day` is purely the
-// reporting tag — it is independent of the crypto key id, which is now
-// `utc_day_of(write_ts)`.
+// `key_manager` derives a per-business-day DEK from a bouncer-supplied seed.
+// The event row records `seed_id` (which seed was active at write time) so
+// crypto-shred can later remove a seed and render its events unrecoverable.
 pub struct EventService {
     pub events: Arc<EventStore>,
     pub key_manager: Arc<KeyManager>,
@@ -48,17 +42,13 @@ impl EventService {
         let now = ctx.at.unwrap_or_else(|| self.clock.now());
         let ts = now.timestamp_millis();
         let business_day = business_day_of(now, self.tz, self.cutoff_hour);
-        let utc_day = utc_day_of(ts);
-        let dek = self.key_manager.current_dek(ts)?;
+        let (dek, seed_id) = self.key_manager.current_dek(&business_day);
 
         let payload = serde_json::to_vec(ev)
             .map_err(|e| crate::error::AppError::Internal(format!("serialize event: {e}")))?;
-        // AAD binds ciphertext to (business_day, event_type, aggregate_id, key_id).
-        // After UTC key rotation, key_id == utc_day, which can differ from
-        // business_day across the local cutoff. Both are bound into AAD so any
-        // tamper to either field fails GCM auth.
+        // AAD binds ciphertext to (business_day, event_type, aggregate_id, seed_id).
         let aad = format!(
-            "{business_day}|{}|{}|{utc_day}",
+            "{business_day}|{}|{}|{seed_id}",
             ev.event_type().as_str(),
             ctx.aggregate_id
         );
@@ -74,15 +64,15 @@ impl EventService {
             override_staff_id: ctx.override_staff_id,
             override_staff_name: ctx.override_staff_name,
             payload_enc: &blob,
-            key_id: &utc_day,
+            seed_id: &seed_id,
         })
     }
 
     pub fn read_decrypted(&self, row: &crate::store::events::EventRow) -> AppResult<DomainEvent> {
-        let dek = self.key_manager.dek_for(&row.key_id)?;
+        let dek = self.key_manager.dek_for(&row.seed_id, &row.business_day)?;
         let aad = format!(
             "{}|{}|{}|{}",
-            row.business_day, row.event_type, row.aggregate_id, row.key_id
+            row.business_day, row.event_type, row.aggregate_id, row.seed_id
         );
         let pt = dek.decrypt(&row.payload_enc, aad.as_bytes())?;
         let ev: DomainEvent = serde_json::from_slice(&pt)
@@ -94,13 +84,11 @@ impl EventService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::crypto::Kek;
+    use crate::bouncer::seed_cache::SeedCache;
     use crate::domain::event::DomainEvent;
     use crate::services::key_manager::KeyManager;
     use crate::store::events::EventStore;
-    use crate::store::master::Master;
     use crate::time::test_support::MockClock;
-    use std::sync::Mutex;
 
     #[allow(clippy::type_complexity)]
     fn rig() -> (
@@ -109,10 +97,12 @@ mod tests {
         Arc<MockClock>,
         FixedOffset,
     ) {
-        let master = Arc::new(Mutex::new(Master::open_in_memory().unwrap()));
         let events = Arc::new(EventStore::open_in_memory().unwrap());
-        let kek = Arc::new(Kek::new_random());
-        let key_manager = Arc::new(KeyManager::new(master, kek));
+        let cache = Arc::new(SeedCache::from_seeds(
+            "test",
+            vec![("test".into(), [42u8; 32])],
+        ));
+        let key_manager = Arc::new(KeyManager::new(cache));
         let clock = Arc::new(MockClock::at_ymd_hms(2026, 4, 27, 12, 0, 0));
         let tz = FixedOffset::east_opt(7 * 3600).unwrap();
         (key_manager, events, clock, tz)

@@ -49,6 +49,11 @@ tower-http = { version = "0.6", features = ["cors", "trace", "limit", "fs"] }
 tower_governor = "0.4"
 tempfile = "3"
 
+# Bouncer client
+reqwest = { version = "0.12", default-features = false, features = ["json", "blocking", "rustls-tls"] }
+blake3 = "1"
+hex = "0.4"
+
 [dev-dependencies]
 anyhow = "1"
 proptest = "1"

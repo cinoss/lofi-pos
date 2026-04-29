@@ -4,24 +4,20 @@
 //!   1. Idempotency check: if `eod_runs.status='ok'` for the day, no-op.
 //!   2. Mark `eod_runs.status='running'`.
 //!   3. Build the report (decrypt every event for the day).
-//!   4. Write report JSON to `<reports_dir>/<day>.json`.
-//!   5. In a single master tx: insert/replace `daily_report`, prune old
-//!      `idempotency_key` + expired `token_denylist`, mark
+//!   4. POST the report to the bouncer (`/reports/eod`). On failure: mark
+//!      `eod_runs.status='failed'` and bail; event rows are NOT deleted so
+//!      a later catch-up can retry.
+//!   5. Master tx: prune old idempotency + expired denylist tokens, mark
 //!      `eod_runs.status='ok'`.
-//!   6. AFTER the master tx commits: delete `event` rows for `business_day`
-//!      from events.db. Failure here is logged but does not flip eod_runs back
-//!      to 'failed' — leftover rows are encrypted with a key that the rotation
-//!      service will shred within `KEY_TTL_DAYS` regardless.
+//!   6. Delete `event` rows for `business_day` from events.db.
 //!
-//! Crypto-shred is no longer EOD's job: the rotation service (`crate::rotation`)
-//! deletes wrapped DEKs older than `KEY_TTL_DAYS` UTC days, independent of any
-//! EOD outcome.
+//! Local `daily_report` table and `reports/<day>.json` files are gone — the
+//! bouncer owns historical report storage off-box.
 
 use crate::app_state::AppState;
 use crate::error::{AppError, AppResult};
 use crate::eod::builder::build_report;
 use rusqlite::params;
-use std::fs;
 
 #[derive(Debug, Clone)]
 pub struct RunResult {
@@ -29,11 +25,6 @@ pub struct RunResult {
     pub status: &'static str,
 }
 
-/// Run the EOD pipeline for `business_day`.
-///
-/// Idempotent: if the day already completed (`eod_runs.status='ok'`) the
-/// function returns immediately without re-doing the work. Failed prior
-/// attempts are retried.
 pub fn run_eod(state: &AppState, business_day: &str) -> AppResult<RunResult> {
     // 1) Already-done short-circuit.
     let already = state
@@ -55,7 +46,7 @@ pub fn run_eod(state: &AppState, business_day: &str) -> AppResult<RunResult> {
         conn.upsert_eod_running(business_day, started_at)?;
     }
 
-    // 3) Build report. On failure, mark eod_runs.status='failed' and bail.
+    // 3) Build report.
     let report = match build_report(state, business_day) {
         Ok(r) => r,
         Err(e) => {
@@ -66,9 +57,18 @@ pub fn run_eod(state: &AppState, business_day: &str) -> AppResult<RunResult> {
         }
     };
 
-    // 4) Write report file. (Treated as fatal; if it fails the day stays
-    //    'failed' so the next catch-up retries.)
-    if let Err(e) = write_report_file(state, &report) {
+    // 4) POST report to bouncer. Failure => mark failed and bail; do NOT
+    //    delete event rows.
+    let payload = serde_json::to_value(&report)
+        .map_err(|e| AppError::Internal(format!("report to_value: {e}")))?;
+    // `run_eod` is a synchronous function; production callers (the EOD
+    // scheduler and the catch-up loop) wrap the entire call in
+    // `tokio::task::spawn_blocking`, so it is safe to invoke the blocking
+    // bouncer client directly here.
+    if let Err(e) = state
+        .bouncer
+        .post_report_blocking(business_day, state.clock.now_ms(), &payload)
+    {
         if let Err(me) = mark_failed(state, business_day, &e.to_string()) {
             tracing::error!(day = %business_day, err = %me, "eod mark_failed failed");
         }
@@ -76,26 +76,15 @@ pub fn run_eod(state: &AppState, business_day: &str) -> AppResult<RunResult> {
     }
 
     // 5) Atomic db updates.
-    let order_summary = serde_json::to_string(&report)
-        .map_err(|e| AppError::Internal(format!("report serialize: {e}")))?;
     let finished_at = state.clock.now_ms();
     {
         let mut master = state.master.lock().unwrap();
         master.with_tx(|tx| {
-            tx.execute(
-                "INSERT OR REPLACE INTO daily_report
-                 (business_day, generated_at, order_summary_json, inventory_summary_json)
-                 VALUES (?1, ?2, ?3, '{}')",
-                params![business_day, started_at, order_summary],
-            )?;
-            // Prune idempotency rows older than ~1 day. We don't store
-            // business_day on idempotency_key (see master::list_idempotency_for_day),
-            // so the bound is by `created_at` ms.
+            // Prune idempotency rows older than ~1 day.
             tx.execute(
                 "DELETE FROM idempotency_key WHERE created_at < ?1",
                 params![finished_at - 24 * 3600 * 1000],
             )?;
-            // Prune any tokens whose exp has passed.
             tx.execute(
                 "DELETE FROM token_denylist WHERE expires_at < ?1",
                 params![finished_at],
@@ -109,17 +98,12 @@ pub fn run_eod(state: &AppState, business_day: &str) -> AppResult<RunResult> {
         })?;
     }
 
-    // 6) Cutoff-driven event-row deletion (events.db, separate connection).
-    //    Order: AFTER the master tx commits, so the daily_report row is durable
-    //    even if this delete fails. The DELETE itself is a single atomic
-    //    statement (sqlite implicit tx — no partial-row state). On retry, the
-    //    short-circuit on status='ok' returns early; recovery is either a
-    //    manual sweep or the natural crypto-shred when rotation prunes the DEK.
+    // 6) Delete event rows for this business day.
     if let Err(e) = state.events.delete_day(business_day) {
         tracing::error!(
             day = %business_day,
             err = %e,
-            "eod: event-row delete failed; daily_report committed, rotation will crypto-shred"
+            "eod: event-row delete failed; report already POSTed"
         );
     }
 
@@ -127,17 +111,6 @@ pub fn run_eod(state: &AppState, business_day: &str) -> AppResult<RunResult> {
         business_day: business_day.to_string(),
         status: "ok",
     })
-}
-
-fn write_report_file(state: &AppState, report: &crate::eod::builder::Report) -> AppResult<()> {
-    fs::create_dir_all(&state.reports_dir).map_err(AppError::Io)?;
-    let path = state
-        .reports_dir
-        .join(format!("{}.json", report.business_day));
-    let bytes = serde_json::to_vec_pretty(report)
-        .map_err(|e| AppError::Internal(format!("report serialize: {e}")))?;
-    fs::write(&path, bytes).map_err(AppError::Io)?;
-    Ok(())
 }
 
 fn mark_failed(state: &AppState, day: &str, err: &str) -> AppResult<()> {
@@ -154,36 +127,15 @@ mod tests {
     use crate::time::Clock;
 
     #[test]
-    fn run_marks_eod_runs_ok_writes_report_deletes_event_rows() {
-        // 2026-04-27 14:00 +07 → business day 2026-04-27.
+    fn run_marks_eod_runs_ok_and_deletes_event_rows() {
         let rig = seed_app_state_at(2026, 4, 27, 7, 0, 0);
         place_test_order(&rig);
-        // First event for the day populated the events table.
         assert!(rig.state.events.count_for_day("2026-04-27").unwrap() > 0);
 
         let result = run_eod(&rig.state, "2026-04-27").unwrap();
         assert_eq!(result.status, "ok");
-        assert!(daily_report_exists(&rig.state, "2026-04-27"));
-        assert!(rig.state.reports_dir.join("2026-04-27.json").exists());
-        // Cutoff-driven: event rows for the closed business day are gone.
         assert_eq!(rig.state.events.count_for_day("2026-04-27").unwrap(), 0);
         assert_eq!(eod_runs_status(&rig.state, "2026-04-27"), "ok");
-    }
-
-    #[test]
-    fn run_does_not_touch_dek() {
-        // Rotation service owns the DEK lifecycle now; EOD must not delete
-        // wrapped DEKs as a side effect of closing a business day.
-        let rig = seed_app_state_at(2026, 4, 27, 7, 0, 0);
-        // Pre-seed a DEK row for today's UTC day.
-        rig.state
-            .master
-            .lock()
-            .unwrap()
-            .put_dek("2026-04-27", &[0u8; 32], 0)
-            .unwrap();
-        run_eod(&rig.state, "2026-04-27").unwrap();
-        assert!(day_key_exists(&rig.state, "2026-04-27"));
     }
 
     #[test]
@@ -191,10 +143,8 @@ mod tests {
         let rig = seed_app_state_at(2026, 4, 27, 7, 0, 0);
         place_test_order(&rig);
         run_eod(&rig.state, "2026-04-27").unwrap();
-        // Second call short-circuits on status='ok' without retrying any work.
         let again = run_eod(&rig.state, "2026-04-27").unwrap();
         assert_eq!(again.status, "ok");
-        // Event rows stay deleted across the no-op repeat call.
         assert_eq!(rig.state.events.count_for_day("2026-04-27").unwrap(), 0);
     }
 
@@ -202,8 +152,6 @@ mod tests {
     fn run_prunes_old_idempotency_keys() {
         let rig = seed_app_state_at(2026, 4, 27, 7, 0, 0);
         place_test_order(&rig);
-        // Insert a synthetic stale idempotency row whose created_at is
-        // older than 24h vs. the runner's clock.
         let stale_ts = rig.clock.now_ms() - 48 * 3600 * 1000;
         insert_idempotency(&rig.state, "stale-key", stale_ts);
         assert!(idempotency_exists(&rig.state, "stale-key"));
@@ -213,13 +161,27 @@ mod tests {
 
     #[test]
     fn run_empty_day_still_succeeds() {
-        // No events at all for the day — pipeline must still produce a
-        // (empty) report row and mark eod_runs ok.
         let rig = seed_app_state_at(2026, 4, 27, 7, 0, 0);
         let r = run_eod(&rig.state, "2026-04-27").unwrap();
         assert_eq!(r.status, "ok");
-        assert!(daily_report_exists(&rig.state, "2026-04-27"));
-        assert!(rig.state.reports_dir.join("2026-04-27.json").exists());
+        assert_eq!(eod_runs_status(&rig.state, "2026-04-27"), "ok");
+    }
+
+    #[test]
+    fn run_marks_failed_when_bouncer_unreachable_and_keeps_event_rows() {
+        // The default test_support rig builds a BouncerClient pointing at an
+        // unreachable port (127.0.0.1:1) — see test_support::seed_app_state_at.
+        // So `post_report` will fail and the runner must NOT delete events.
+        let rig = seed_app_state_at_failing_bouncer(2026, 4, 27, 7, 0, 0);
+        place_test_order(&rig);
+        let before = rig.state.events.count_for_day("2026-04-27").unwrap();
+        let res = run_eod(&rig.state, "2026-04-27");
+        assert!(res.is_err(), "expected bouncer post to fail");
+        assert_eq!(eod_runs_status(&rig.state, "2026-04-27"), "failed");
+        // Event rows preserved for retry.
+        assert_eq!(
+            rig.state.events.count_for_day("2026-04-27").unwrap(),
+            before
+        );
     }
 }
-

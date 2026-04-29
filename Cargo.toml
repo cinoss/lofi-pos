@@ -1,0 +1,6 @@
+[workspace]
+resolver = "2"
+members = [
+    "apps/cashier/src-tauri",
+    "apps/bouncer-mock",
+]

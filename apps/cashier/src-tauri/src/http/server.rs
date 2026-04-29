@@ -73,7 +73,6 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .merge(crate::http::routes::payment::router())
         .merge(crate::http::routes::ws::router())
         .merge(crate::http::routes::admin::router())
-        .merge(crate::http::routes::reports::router())
         .with_state(state)
         // Admin SPA static mount. Lives at `/ui/admin/*`; `/admin/*` is the
         // JSON API. SPA fallback inside `static_admin::router` returns

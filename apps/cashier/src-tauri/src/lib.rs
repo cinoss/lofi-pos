@@ -2,6 +2,7 @@ pub mod acl;
 pub mod app_state;
 pub mod auth;
 pub mod bootstrap;
+pub mod bouncer;
 pub mod business_day;
 pub mod cli;
 pub mod crypto;
@@ -11,7 +12,6 @@ pub mod error;
 pub mod http;
 pub mod keychain;
 pub mod print;
-pub mod rotation;
 pub mod services;
 pub mod store;
 pub mod time;
@@ -30,7 +30,6 @@ pub fn run() {
             std::fs::create_dir_all(&data_dir)?;
 
             let ks = keychain::OsKeyStore::new(keychain::SERVICE);
-            let kek = Arc::new(bootstrap::load_or_init_kek(&ks)?);
 
             let master_path = data_dir.join("master.db");
             let master = Arc::new(Mutex::new(store::master::Master::open(&master_path)?));
@@ -42,13 +41,27 @@ pub fn run() {
 
             let clock: Arc<dyn time::Clock> = Arc::new(time::SystemClock);
 
+            // Bouncer init — degraded-tolerant. Cashier ships with a hard-coded
+            // fallback seed so startup never fails on bouncer outage.
+            let bouncer_url = std::env::var("LOFI_BOUNCER_URL")
+                .unwrap_or_else(|_| "http://127.0.0.1:7879".into());
+            let bouncer = Arc::new(bouncer::client::BouncerClient::new(bouncer_url));
+            if let Err(e) = bouncer.health_blocking() {
+                tracing::warn!(error = %e, "bouncer health probe failed; will attempt seed fetch anyway");
+            }
+            let seed_cache = Arc::new(bouncer::seed_cache::SeedCache::fetch_or_fallback(&bouncer));
+            if seed_cache.degraded {
+                tracing::warn!(
+                    "cashier started in DEGRADED mode (bouncer unreachable / no default seed). \
+                     New events use fallback seed; events tagged with bouncer-only seeds will not \
+                     decrypt this session. Restart with bouncer reachable to recover."
+                );
+            }
+
             // Load TZ + cutoff from settings
             let (cutoff_hour, tz) = load_business_day_settings(&master.lock().unwrap())?;
 
-            let key_manager = Arc::new(services::key_manager::KeyManager::new(
-                master.clone(),
-                kek.clone(),
-            ));
+            let key_manager = Arc::new(services::key_manager::KeyManager::new(seed_cache.clone()));
 
             let event_service = services::event_service::EventService {
                 events: events.clone(),
@@ -70,15 +83,8 @@ pub fn run() {
 
             // Warm up from disk BEFORE managing AppState so the first
             // request sees a fully populated cache.
-            let stats = store.warm_up(
-                &master.lock().unwrap(),
-                &events,
-                &kek,
-                &*clock,
-                tz,
-                cutoff_hour,
-            )?;
-            tracing::info!(?stats, "aggregate store warm-up complete");
+            let report = store.warm_up(&events, &key_manager)?;
+            tracing::info!(?report, "aggregate store warm-up complete");
 
             let settings = Arc::new(app_state::Settings::load(&master.lock().unwrap())?);
             let (broadcast_tx, _) = tokio::sync::broadcast::channel(256);
@@ -97,16 +103,6 @@ pub fn run() {
                 broadcast_tx: broadcast_tx.clone(),
             };
 
-            // Plan F: reports go under <app_data_dir>/reports.
-            let reports_dir = data_dir.join("reports");
-
-            // Plan F: serve the admin SPA at /ui/admin/* from this directory.
-            // Order of resolution:
-            //   1. `LOFI_ADMIN_DIST` env var (dev override)
-            //   2. Tauri resource_dir + "admin/dist" (prod bundle)
-            //   3. <workspace>/apps/admin/dist (cargo run / dev fallback)
-            // If the chosen path does not exist the static handler simply
-            // 404s — `serve` logs a warning at startup so it's visible.
             let admin_dist: PathBuf = if let Ok(p) = std::env::var("LOFI_ADMIN_DIST") {
                 PathBuf::from(p)
             } else if let Ok(res) = app.path().resource_dir() {
@@ -116,25 +112,22 @@ pub fn run() {
             };
 
             let app_state = Arc::new(app_state::AppState {
-                kek,
                 master,
                 events,
                 key_manager,
+                seed_cache,
+                bouncer,
                 clock,
                 auth,
                 commands: commands_svc,
                 store,
                 settings,
                 broadcast_tx,
-                reports_dir,
                 admin_dist,
             });
 
-            // Hand a clone to Tauri so future Rust-only callers (e.g., menu
-            // handlers) can reach state; the UI itself talks HTTP.
             app.manage(app_state.clone());
 
-            // Spawn HTTP server on Tauri's inherited Tokio runtime.
             let http_state = app_state.clone();
             tauri::async_runtime::spawn(async move {
                 if let Err(e) = http::server::serve(http_state).await {
@@ -142,13 +135,8 @@ pub fn run() {
                 }
             });
 
-            // Plan F: spawn the EOD scheduler on the same runtime. Performs
-            // startup catch-up immediately, then loops on next_cutoff.
             eod::scheduler::spawn(app_state.clone());
-
-            // UTC key rotation scheduler. Independent of EOD: ensures today's
-            // DEK exists and prunes any DEK older than 3 UTC days.
-            rotation::spawn(app_state.clone());
+            bouncer::print_queue::spawn(app_state.clone());
 
             Ok(())
         })

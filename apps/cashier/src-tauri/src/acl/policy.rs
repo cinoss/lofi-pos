@@ -66,12 +66,10 @@ pub fn check(action: Action, actor: Role, ctx: PolicyCtx) -> Decision {
 
         // manager+
         CancelOrderItemAny | ReturnOrderItem | TransferSession | MergeSessions | SplitSession
-        | ApplyDiscountLarge | ViewLiveReports | ViewReports | EditMenu => allow_at(Role::Manager),
+        | ApplyDiscountLarge | ViewLiveReports | EditMenu => allow_at(Role::Manager),
 
         // owner only
-        RunEod | EditRecipes | EditStaff | EditSettings | SpotEdit | ViewKeys => {
-            allow_at(Role::Owner)
-        }
+        RunEod | EditRecipes | EditStaff | EditSettings | SpotEdit => allow_at(Role::Owner),
     }
 }
 
@@ -163,7 +161,6 @@ mod tests {
             SplitSession,
             ApplyDiscountLarge,
             ViewLiveReports,
-            ViewReports,
             EditMenu,
         ] {
             assert_override!(a, Staff, Manager);
@@ -175,7 +172,7 @@ mod tests {
 
     #[test]
     fn owner_required_actions() {
-        for a in [RunEod, EditRecipes, EditStaff, EditSettings, SpotEdit, ViewKeys] {
+        for a in [RunEod, EditRecipes, EditStaff, EditSettings, SpotEdit] {
             assert_override!(a, Manager, Owner);
             assert_allow!(a, Owner);
         }

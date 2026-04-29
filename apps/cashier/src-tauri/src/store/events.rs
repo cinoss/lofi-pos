@@ -10,27 +10,18 @@ use std::sync::Mutex;
 /// `Connection: !Sync`; SQLite serializes writes anyway). This shape lets
 /// many parallel HTTP/Tauri handlers project state simultaneously while
 /// `append` still maintains write-ordering invariants.
-///
-/// In-memory mode behaves differently: shared-cache memory SQLite databases
-/// don't reliably support WAL (many builds silently fall back to MEMORY/DELETE
-/// journal modes), which causes `SQLITE_BUSY` / "database table is locked"
-/// errors when readers and the writer race. Tests don't need parallelism, so
-/// in-memory mode collapses everything onto a single `Mutex<Connection>`.
 pub struct EventStore {
     backend: Backend,
 }
 
 enum Backend {
     File {
-        /// Pooled connections for read paths. WAL allows concurrent readers.
         read_pool: Pool<SqliteConnectionManager>,
-        /// Single writer connection (rusqlite::Connection is !Sync).
-        /// Append serializes through this mutex; reads bypass via the pool.
         writer: Mutex<Connection>,
     },
-    /// Tests-only: shared-cache memory DBs can't run WAL reliably, so
-    /// reads and writes share one mutex-guarded connection.
-    Memory { conn: Mutex<Connection> },
+    Memory {
+        conn: Mutex<Connection>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -40,12 +31,13 @@ pub struct EventRow {
     pub ts: i64,
     pub event_type: String,
     pub aggregate_id: String,
+    pub agg_seq: i64,
     pub actor_staff: Option<i64>,
     pub actor_name: Option<String>,
     pub override_staff_id: Option<i64>,
     pub override_staff_name: Option<String>,
     pub payload_enc: Vec<u8>,
-    pub key_id: String,
+    pub seed_id: String,
 }
 
 #[derive(Debug, Clone)]
@@ -59,12 +51,11 @@ pub struct AppendEvent<'a> {
     pub override_staff_id: Option<i64>,
     pub override_staff_name: Option<&'a str>,
     pub payload_enc: &'a [u8],
-    pub key_id: &'a str,
+    pub seed_id: &'a str,
 }
 
 impl EventStore {
     pub fn open(path: &Path) -> AppResult<Self> {
-        // Run migrations on a one-shot connection first.
         let mut bootstrap = Connection::open(path)?;
         bootstrap.pragma_update(None, "journal_mode", "WAL")?;
         bootstrap.pragma_update(None, "foreign_keys", "ON")?;
@@ -74,7 +65,6 @@ impl EventStore {
         )?;
         drop(bootstrap);
 
-        // Build the read pool.
         let manager = SqliteConnectionManager::file(path).with_init(|c| {
             c.pragma_update(None, "journal_mode", "WAL")?;
             c.pragma_update(None, "foreign_keys", "ON")?;
@@ -85,7 +75,6 @@ impl EventStore {
             .build(manager)
             .map_err(|e| AppError::Internal(format!("r2d2: {e}")))?;
 
-        // Dedicated writer connection.
         let writer = Connection::open(path)?;
         writer.pragma_update(None, "journal_mode", "WAL")?;
         writer.pragma_update(None, "foreign_keys", "ON")?;
@@ -99,9 +88,6 @@ impl EventStore {
     }
 
     pub fn open_in_memory() -> AppResult<Self> {
-        // Shared-cache memory URI so the bootstrap+migrations stay visible.
-        // We only keep one connection for the whole store: WAL is unreliable
-        // on memory DBs, and a single mutex sidesteps the lock contention.
         let uri = format!(
             "file:eventstore_mem_{}?mode=memory&cache=shared",
             uuid::Uuid::new_v4().simple()
@@ -135,46 +121,57 @@ impl EventStore {
         }
     }
 
-    fn with_write<R>(&self, f: impl FnOnce(&Connection) -> AppResult<R>) -> AppResult<R> {
+    fn with_write<R>(&self, f: impl FnOnce(&mut Connection) -> AppResult<R>) -> AppResult<R> {
         match &self.backend {
             Backend::File { writer, .. } => {
-                let guard = writer.lock().unwrap();
-                f(&guard)
+                let mut guard = writer.lock().unwrap();
+                f(&mut guard)
             }
             Backend::Memory { conn } => {
-                let guard = conn.lock().unwrap();
-                f(&guard)
+                let mut guard = conn.lock().unwrap();
+                f(&mut guard)
             }
         }
     }
 
     pub fn append(&self, ev: AppendEvent<'_>) -> AppResult<i64> {
         self.with_write(|conn| {
-            conn.execute(
+            let tx = conn.transaction()?;
+            let next_seq: i64 = tx.query_row(
+                "SELECT COALESCE(MAX(agg_seq), 0) + 1 FROM event WHERE aggregate_id = ?1",
+                params![ev.aggregate_id],
+                |r| r.get(0),
+            )?;
+            tx.execute(
                 "INSERT INTO event
-                 (business_day, ts, type, aggregate_id, actor_staff, actor_name, override_staff_id, override_staff_name, payload_enc, key_id)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                 (business_day, ts, type, aggregate_id, agg_seq, actor_staff, actor_name,
+                  override_staff_id, override_staff_name, payload_enc, seed_id)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
                 params![
                     ev.business_day,
                     ev.ts,
                     ev.event_type,
                     ev.aggregate_id,
+                    next_seq,
                     ev.actor_staff,
                     ev.actor_name,
                     ev.override_staff_id,
                     ev.override_staff_name,
                     ev.payload_enc,
-                    ev.key_id
+                    ev.seed_id
                 ],
             )?;
-            Ok(conn.last_insert_rowid())
+            let id = tx.last_insert_rowid();
+            tx.commit()?;
+            Ok(id)
         })
     }
 
     pub fn list_for_day(&self, business_day: &str) -> AppResult<Vec<EventRow>> {
         self.with_read(|conn| {
             let mut stmt = conn.prepare(
-                "SELECT id, business_day, ts, type, aggregate_id, actor_staff, actor_name, override_staff_id, override_staff_name, payload_enc, key_id
+                "SELECT id, business_day, ts, type, aggregate_id, agg_seq, actor_staff, actor_name,
+                        override_staff_id, override_staff_name, payload_enc, seed_id
                  FROM event WHERE business_day = ?1 ORDER BY id ASC",
             )?;
             let rows = stmt
@@ -187,11 +184,27 @@ impl EventStore {
     pub fn list_for_aggregate(&self, aggregate_id: &str) -> AppResult<Vec<EventRow>> {
         self.with_read(|conn| {
             let mut stmt = conn.prepare(
-                "SELECT id, business_day, ts, type, aggregate_id, actor_staff, actor_name, override_staff_id, override_staff_name, payload_enc, key_id
-                 FROM event WHERE aggregate_id = ?1 ORDER BY id ASC",
+                "SELECT id, business_day, ts, type, aggregate_id, agg_seq, actor_staff, actor_name,
+                        override_staff_id, override_staff_name, payload_enc, seed_id
+                 FROM event WHERE aggregate_id = ?1 ORDER BY agg_seq ASC",
             )?;
             let rows = stmt
                 .query_map(params![aggregate_id], row_to_event)?
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(rows)
+        })
+    }
+
+    /// All event rows, ordered globally by (ts, id). Used by warm-up.
+    pub fn list_all(&self) -> AppResult<Vec<EventRow>> {
+        self.with_read(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT id, business_day, ts, type, aggregate_id, agg_seq, actor_staff, actor_name,
+                        override_staff_id, override_staff_name, payload_enc, seed_id
+                 FROM event ORDER BY ts ASC, id ASC",
+            )?;
+            let rows = stmt
+                .query_map([], row_to_event)?
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(rows)
         })
@@ -224,9 +237,20 @@ impl EventStore {
         })
     }
 
-    /// List the distinct aggregate ids that have ever emitted an event of
-    /// the given `event_type`. Used by command-service helpers to seed an
-    /// "active" scan over a single event class (e.g. all SessionOpened ids).
+    /// Distinct business_days that currently have at least one event row.
+    /// Used by the EOD scheduler to catch up unfinished closures.
+    pub fn list_active_business_days(&self) -> AppResult<Vec<String>> {
+        self.with_read(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT DISTINCT business_day FROM event ORDER BY business_day ASC",
+            )?;
+            let rows = stmt
+                .query_map([], |r| r.get::<_, String>(0))?
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(rows)
+        })
+    }
+
     pub fn list_aggregate_ids_by_type(&self, event_type: &str) -> AppResult<Vec<String>> {
         self.with_read(|conn| {
             let mut stmt = conn.prepare(
@@ -239,10 +263,6 @@ impl EventStore {
         })
     }
 
-    /// Aggregate ids that exist in the log but have no terminal event yet.
-    /// Used by warm-up to limit replay to live aggregates only — closed
-    /// sessions, paid sessions, merged sources, split sources, returned
-    /// orders, etc., do NOT need their state in memory.
     pub fn list_live_aggregate_ids(&self) -> AppResult<Vec<String>> {
         self.with_read(|conn| {
             let mut stmt = conn.prepare(
@@ -258,17 +278,26 @@ impl EventStore {
         })
     }
 
-    /// Look up the most recent event for an aggregate, or None.
     pub fn latest_for_aggregate(&self, aggregate_id: &str) -> AppResult<Option<EventRow>> {
         self.with_read(|conn| {
             Ok(conn
                 .query_row(
-                    "SELECT id, business_day, ts, type, aggregate_id, actor_staff, actor_name, override_staff_id, override_staff_name, payload_enc, key_id
-                     FROM event WHERE aggregate_id = ?1 ORDER BY id DESC LIMIT 1",
+                    "SELECT id, business_day, ts, type, aggregate_id, agg_seq, actor_staff, actor_name,
+                            override_staff_id, override_staff_name, payload_enc, seed_id
+                     FROM event WHERE aggregate_id = ?1 ORDER BY agg_seq DESC LIMIT 1",
                     params![aggregate_id],
                     row_to_event,
                 )
                 .optional()?)
+        })
+    }
+
+    /// Test-only: forcibly delete a row by id. Used by warm-up tests to
+    /// simulate a sequence-gap by removing a middle event.
+    pub fn delete_by_id(&self, id: i64) -> AppResult<usize> {
+        self.with_write(|conn| {
+            let n = conn.execute("DELETE FROM event WHERE id = ?1", params![id])?;
+            Ok(n)
         })
     }
 }
@@ -280,12 +309,13 @@ fn row_to_event(r: &rusqlite::Row<'_>) -> rusqlite::Result<EventRow> {
         ts: r.get(2)?,
         event_type: r.get(3)?,
         aggregate_id: r.get(4)?,
-        actor_staff: r.get(5)?,
-        actor_name: r.get(6)?,
-        override_staff_id: r.get(7)?,
-        override_staff_name: r.get(8)?,
-        payload_enc: r.get(9)?,
-        key_id: r.get(10)?,
+        agg_seq: r.get(5)?,
+        actor_staff: r.get(6)?,
+        actor_name: r.get(7)?,
+        override_staff_id: r.get(8)?,
+        override_staff_name: r.get(9)?,
+        payload_enc: r.get(10)?,
+        seed_id: r.get(11)?,
     })
 }
 
@@ -304,7 +334,7 @@ mod tests {
             override_staff_id: None,
             override_staff_name: None,
             payload_enc: b"ciphertext",
-            key_id: day,
+            seed_id: "seed-test",
         }
     }
 
@@ -384,5 +414,29 @@ mod tests {
     fn latest_for_aggregate_returns_none_when_empty() {
         let s = EventStore::open_in_memory().unwrap();
         assert!(s.latest_for_aggregate("nope").unwrap().is_none());
+    }
+
+    #[test]
+    fn agg_seq_starts_at_1_for_new_aggregate() {
+        let s = EventStore::open_in_memory().unwrap();
+        s.append(ev("2026-04-27", "fresh", "X", 1)).unwrap();
+        let rows = s.list_for_aggregate("fresh").unwrap();
+        assert_eq!(rows[0].agg_seq, 1);
+    }
+
+    #[test]
+    fn agg_seq_increments_per_aggregate_independently() {
+        let s = EventStore::open_in_memory().unwrap();
+        s.append(ev("d", "a", "X", 1)).unwrap();
+        s.append(ev("d", "a", "Y", 2)).unwrap();
+        s.append(ev("d", "b", "X", 3)).unwrap();
+        s.append(ev("d", "a", "Z", 4)).unwrap();
+        let a = s.list_for_aggregate("a").unwrap();
+        let b = s.list_for_aggregate("b").unwrap();
+        assert_eq!(
+            a.iter().map(|r| r.agg_seq).collect::<Vec<_>>(),
+            vec![1, 2, 3]
+        );
+        assert_eq!(b.iter().map(|r| r.agg_seq).collect::<Vec<_>>(), vec![1]);
     }
 }

@@ -46,25 +46,6 @@ pub struct Spot {
     pub status: String,
 }
 
-/// One row returned from `list_dek_days` — the UTC day a wrapped DEK exists
-/// for and when it was first written. Surfaced to operators via
-/// `GET /admin/keys`.
-#[derive(Debug, Clone, Serialize)]
-pub struct DekInfo {
-    pub utc_day: String,
-    pub created_at: i64,
-}
-
-/// Plan F: row returned from `daily_report`. The `*_json` columns are raw
-/// JSON strings (the serialized `Report` from `eod::builder`).
-#[derive(Debug, Clone, Serialize)]
-pub struct DailyReportRow {
-    pub business_day: String,
-    pub generated_at: i64,
-    pub order_summary_json: String,
-    pub inventory_summary_json: String,
-}
-
 #[derive(Debug, Clone, Serialize)]
 pub struct Product {
     pub id: i64,
@@ -82,9 +63,9 @@ pub struct RecipeIngredient {
     pub unit: String,
 }
 
-/// Connection wrapper for `master.db` (CRUD: staff, room, table, product,
-/// recipe, setting, day_key, daily_report). Single writer; caller serializes
-/// via outer mutex.
+/// Connection wrapper for `master.db`. Holds CRUD-style state (staff, spots,
+/// products, recipes, settings, idempotency, eod_runs, print_queue, denylist).
+/// Single writer; caller serializes via outer mutex.
 pub struct Master {
     conn: Connection,
 }
@@ -113,66 +94,6 @@ impl Master {
         Ok(Self { conn })
     }
 
-    /// Fetch the wrapped DEK for the given UTC calendar day, if any.
-    pub fn get_dek(&self, utc_day: &str) -> AppResult<Option<Vec<u8>>> {
-        Ok(self
-            .conn
-            .query_row(
-                "SELECT wrapped_dek FROM dek WHERE utc_day = ?1",
-                params![utc_day],
-                |r| r.get::<_, Vec<u8>>(0),
-            )
-            .optional()?)
-    }
-    /// Insert a wrapped DEK for `utc_day`. Idempotent: returns `false` on
-    /// conflict (existing row preserved). `now_ms` is recorded as `created_at`.
-    pub fn put_dek(&self, utc_day: &str, wrapped: &[u8], now_ms: i64) -> AppResult<bool> {
-        let n = self.conn.execute(
-            "INSERT OR IGNORE INTO dek(utc_day, wrapped_dek, created_at) VALUES (?1, ?2, ?3)",
-            params![utc_day, wrapped, now_ms],
-        )?;
-        Ok(n == 1)
-    }
-    /// Crypto-shred a UTC day by removing its wrapped DEK. Returns `false` if
-    /// the row was already absent.
-    pub fn delete_dek(&self, utc_day: &str) -> AppResult<bool> {
-        let n = self
-            .conn
-            .execute("DELETE FROM dek WHERE utc_day = ?1", params![utc_day])?;
-        Ok(n > 0)
-    }
-    /// List all currently-held DEK rows in descending utc_day order. Used by
-    /// the Owner-only `GET /admin/keys` endpoint for ops visibility.
-    pub fn list_dek_days(&self) -> AppResult<Vec<DekInfo>> {
-        let mut stmt = self
-            .conn
-            .prepare("SELECT utc_day, created_at FROM dek ORDER BY utc_day DESC")?;
-        let rows = stmt
-            .query_map([], |r| {
-                Ok(DekInfo {
-                    utc_day: r.get(0)?,
-                    created_at: r.get(1)?,
-                })
-            })?
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(rows)
-    }
-    /// Delete every DEK whose `utc_day < oldest_keep`. Returns the list of
-    /// deleted utc_day strings (for logging by the rotation scheduler).
-    pub fn delete_deks_older_than(&self, oldest_keep: &str) -> AppResult<Vec<String>> {
-        let mut stmt = self
-            .conn
-            .prepare("SELECT utc_day FROM dek WHERE utc_day < ?1 ORDER BY utc_day ASC")?;
-        let to_delete: Vec<String> = stmt
-            .query_map(params![oldest_keep], |r| r.get::<_, String>(0))?
-            .collect::<Result<Vec<_>, _>>()?;
-        drop(stmt);
-        for d in &to_delete {
-            self.conn
-                .execute("DELETE FROM dek WHERE utc_day = ?1", params![d])?;
-        }
-        Ok(to_delete)
-    }
     /// Read a key/value pair from the `setting` table.
     pub fn get_setting(&self, key: &str) -> AppResult<Option<String>> {
         Ok(self
@@ -506,45 +427,6 @@ impl Master {
             .unwrap_or(false))
     }
 
-    /// Plan F: read a `daily_report` row by `business_day`.
-    pub fn get_daily_report(&self, business_day: &str) -> AppResult<Option<DailyReportRow>> {
-        Ok(self
-            .conn
-            .query_row(
-                "SELECT business_day, generated_at, order_summary_json, inventory_summary_json
-                 FROM daily_report WHERE business_day = ?1",
-                params![business_day],
-                |r| {
-                    Ok(DailyReportRow {
-                        business_day: r.get(0)?,
-                        generated_at: r.get(1)?,
-                        order_summary_json: r.get(2)?,
-                        inventory_summary_json: r.get(3)?,
-                    })
-                },
-            )
-            .optional()?)
-    }
-
-    /// Plan F: list `daily_report` rows newest-first (by generated_at).
-    pub fn list_daily_reports(&self) -> AppResult<Vec<DailyReportRow>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT business_day, generated_at, order_summary_json, inventory_summary_json
-             FROM daily_report ORDER BY business_day DESC",
-        )?;
-        let rows = stmt
-            .query_map([], |r| {
-                Ok(DailyReportRow {
-                    business_day: r.get(0)?,
-                    generated_at: r.get(1)?,
-                    order_summary_json: r.get(2)?,
-                    inventory_summary_json: r.get(3)?,
-                })
-            })?
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(rows)
-    }
-
     /// Plan F: read the `status` column from `eod_runs` for `business_day`.
     pub fn get_eod_runs_status(&self, business_day: &str) -> AppResult<Option<String>> {
         Ok(self
@@ -607,6 +489,76 @@ impl Master {
             .collect::<Result<Vec<_>, _>>()?;
         Ok(rows)
     }
+
+    // ---------- Print queue ----------
+
+    /// Insert a new print job, ready to be picked up immediately.
+    pub fn enqueue_print(
+        &self,
+        kind: &str,
+        payload_json: &str,
+        target: Option<&str>,
+        now_ms: i64,
+    ) -> AppResult<i64> {
+        self.conn.execute(
+            "INSERT INTO print_queue(kind, payload_json, target, attempts, last_error, enqueued_at, next_try_at)
+             VALUES (?1, ?2, ?3, 0, NULL, ?4, ?4)",
+            params![kind, payload_json, target, now_ms],
+        )?;
+        Ok(self.conn.last_insert_rowid())
+    }
+
+    /// Pop the next eligible print job (smallest next_try_at &lt;= now). Returns
+    /// None if nothing is ready.
+    pub fn next_print_job(&self, now_ms: i64) -> AppResult<Option<PrintJob>> {
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT id, kind, payload_json, target, attempts FROM print_queue
+                 WHERE next_try_at <= ?1 ORDER BY id ASC LIMIT 1",
+                params![now_ms],
+                |r| {
+                    Ok(PrintJob {
+                        id: r.get(0)?,
+                        kind: r.get(1)?,
+                        payload_json: r.get(2)?,
+                        target: r.get(3)?,
+                        attempts: r.get(4)?,
+                    })
+                },
+            )
+            .optional()?)
+    }
+
+    pub fn delete_print_job(&self, id: i64) -> AppResult<bool> {
+        let n = self
+            .conn
+            .execute("DELETE FROM print_queue WHERE id = ?1", params![id])?;
+        Ok(n > 0)
+    }
+
+    pub fn reschedule_print_job(
+        &self,
+        id: i64,
+        last_error: &str,
+        next_try_at: i64,
+    ) -> AppResult<()> {
+        self.conn.execute(
+            "UPDATE print_queue SET attempts = attempts + 1, last_error = ?2, next_try_at = ?3
+             WHERE id = ?1",
+            params![id, last_error, next_try_at],
+        )?;
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct PrintJob {
+    pub id: i64,
+    pub kind: String,
+    pub payload_json: String,
+    pub target: Option<String>,
+    pub attempts: i64,
 }
 
 fn row_to_spot(r: &rusqlite::Row<'_>) -> rusqlite::Result<Spot> {
@@ -666,61 +618,6 @@ mod tests {
                 .as_deref(),
             Some("11")
         );
-    }
-
-    #[test]
-    fn dek_put_then_get_round_trips() {
-        let m = Master::open_in_memory().unwrap();
-        assert!(m.get_dek("2026-04-28").unwrap().is_none());
-        assert!(m.put_dek("2026-04-28", &[1, 2, 3], 1_000).unwrap());
-        assert_eq!(m.get_dek("2026-04-28").unwrap(), Some(vec![1, 2, 3]));
-        assert!(m.delete_dek("2026-04-28").unwrap());
-        assert!(m.get_dek("2026-04-28").unwrap().is_none());
-        assert!(!m.delete_dek("2026-04-28").unwrap());
-    }
-
-    #[test]
-    fn put_dek_returns_false_on_conflict() {
-        let m = Master::open_in_memory().unwrap();
-        assert!(m.put_dek("2026-04-28", &[1], 1).unwrap());
-        // Second insert same day: original row preserved.
-        assert!(!m.put_dek("2026-04-28", &[2, 2], 2).unwrap());
-        assert_eq!(m.get_dek("2026-04-28").unwrap(), Some(vec![1]));
-    }
-
-    #[test]
-    fn delete_deks_older_than_returns_deleted_days() {
-        let m = Master::open_in_memory().unwrap();
-        for d in &[
-            "2026-04-25",
-            "2026-04-26",
-            "2026-04-27",
-            "2026-04-28",
-            "2026-04-29",
-        ] {
-            m.put_dek(d, &[0], 1).unwrap();
-        }
-        let deleted = m.delete_deks_older_than("2026-04-27").unwrap();
-        assert_eq!(deleted, vec!["2026-04-25", "2026-04-26"]);
-        let remaining: Vec<String> = m
-            .list_dek_days()
-            .unwrap()
-            .into_iter()
-            .map(|r| r.utc_day)
-            .collect();
-        assert_eq!(remaining, vec!["2026-04-29", "2026-04-28", "2026-04-27"]);
-    }
-
-    #[test]
-    fn list_dek_days_returns_desc_order() {
-        let m = Master::open_in_memory().unwrap();
-        m.put_dek("2026-04-26", &[0], 100).unwrap();
-        m.put_dek("2026-04-28", &[0], 300).unwrap();
-        m.put_dek("2026-04-27", &[0], 200).unwrap();
-        let info = m.list_dek_days().unwrap();
-        let days: Vec<&str> = info.iter().map(|i| i.utc_day.as_str()).collect();
-        assert_eq!(days, vec!["2026-04-28", "2026-04-27", "2026-04-26"]);
-        assert_eq!(info[0].created_at, 300);
     }
 
     #[test]

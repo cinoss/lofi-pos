@@ -12,7 +12,7 @@ use crate::auth::token::TokenClaims;
 use crate::error::{AppError, AppResult};
 use crate::http::auth_layer::AuthCtx;
 use crate::http::error_layer::AppErrorResponse;
-use crate::store::master::{DekInfo, Product, Spot, SpotKind};
+use crate::store::master::{Product, Spot, SpotKind};
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::routing::{get, put};
@@ -65,23 +65,6 @@ pub fn router() -> Router<Arc<AppState>> {
         )
         // Settings — Action::EditSettings
         .route("/admin/settings", get(get_settings).put(update_settings))
-        // DEK retention visibility — Action::ViewKeys (Owner-only)
-        .route("/admin/keys", get(list_keys))
-}
-
-// ---------- Keys (UTC key rotation visibility) ----------
-
-async fn list_keys(
-    State(state): State<Arc<AppState>>,
-    AuthCtx(claims): AuthCtx,
-) -> Result<Json<Vec<DekInfo>>, AppErrorResponse> {
-    require(Action::ViewKeys, &claims).map_err(AppErrorResponse)?;
-    let master = state.master.clone();
-    let info = tokio::task::spawn_blocking(move || master.lock().unwrap().list_dek_days())
-        .await
-        .map_err(|e| AppErrorResponse(AppError::Internal(format!("join: {e}"))))?
-        .map_err(AppErrorResponse)?;
-    Ok(Json(info))
 }
 
 // ---------- Spots ----------

@@ -27,7 +27,19 @@ const CATCH_UP_MAX_DAYS: usize = 90;
 /// Spawn the EOD scheduler on the current Tokio runtime.
 pub fn spawn(state: Arc<AppState>) {
     tokio::spawn(async move {
-        if let Err(e) = catch_up(&state) {
+        // `run_eod` and `catch_up` are synchronous and end up calling the
+        // blocking reqwest bouncer client; offload them to the blocking
+        // pool so we don't panic the runtime by invoking blocking reqwest
+        // from inside a tokio task.
+        let s = state.clone();
+        if let Err(e) = tokio::task::spawn_blocking(move || catch_up(&s))
+            .await
+            .unwrap_or_else(|join_err| {
+                Err(crate::error::AppError::Internal(format!(
+                    "catch_up join: {join_err}"
+                )))
+            })
+        {
             tracing::error!(?e, "eod catch-up failed");
         }
         loop {
@@ -46,59 +58,47 @@ pub fn spawn(state: Arc<AppState>) {
             let cfg2 = current_cfg(&state);
             let now2 = state.clock.now_ms();
             let just_closed = business_day_for(now2 - 1000, cfg2);
-            if let Err(e) = run_eod(&state, &just_closed) {
+            let s = state.clone();
+            let day = just_closed.clone();
+            let r = tokio::task::spawn_blocking(move || run_eod(&s, &day))
+                .await
+                .unwrap_or_else(|join_err| {
+                    Err(crate::error::AppError::Internal(format!(
+                        "run_eod join: {join_err}"
+                    )))
+                });
+            if let Err(e) = r {
                 tracing::error!(day = %just_closed, ?e, "eod run failed");
             }
         }
     });
 }
 
-/// Process every business day strictly before today that still has a
-/// wrapped DEK (i.e. events on disk) but no successful `eod_runs` row.
-///
-/// Only days that actually appear in `day_key` (i.e. saw real activity) are
-/// considered — empty calendar days never need a report file. A hard cap of
-/// `CATCH_UP_MAX_DAYS` is applied to the candidate list, taking the most
-/// recent days; a warning is logged if older days are skipped (which would
-/// indicate a stale `day_key` row that should be cleaned up manually).
+/// Process every business day strictly before today that still has events on
+/// disk (i.e. `event.business_day` distinct rows) but no successful `eod_runs`
+/// entry. A hard cap of `CATCH_UP_MAX_DAYS` is applied to the candidate list,
+/// taking the most recent days.
 pub fn catch_up(state: &AppState) -> crate::error::AppResult<()> {
     let cfg = current_cfg(state);
     let today = business_day_for(state.clock.now_ms(), cfg);
-    // NOTE: Post-UTC-rotation, `dek.utc_day` no longer corresponds 1:1 to
-    // business_day. Catch-up still uses currently-held DEK days as a coarse
-    // proxy for "days with potential activity" — any business_day not present
-    // here will simply be skipped (its events have already been crypto-shred or
-    // EOD-deleted). Acceptable until a dedicated business-day index is added.
-    let active_days: Vec<String> = state
-        .master
-        .lock()
-        .unwrap()
-        .list_dek_days()?
-        .into_iter()
-        .map(|i| i.utc_day)
-        .collect();
-
-    // `list_active_business_days` returns only days with a wrapped DEK row.
-    // Anything < today is a candidate. Sort ascending so we process oldest
-    // first under the cap.
-    let mut candidates: Vec<String> = active_days
+    let mut candidates: Vec<String> = state
+        .events
+        .list_active_business_days()?
         .into_iter()
         .filter(|d| d.as_str() < today.as_str())
         .collect();
     candidates.sort();
 
     if candidates.len() > CATCH_UP_MAX_DAYS {
-        let skipped = candidates.len() - CATCH_UP_MAX_DAYS;
         let drop_to = candidates.len() - CATCH_UP_MAX_DAYS;
         let oldest_kept = candidates[drop_to].clone();
         let oldest_skipped = candidates[0].clone();
         tracing::warn!(
-            skipped,
+            skipped = drop_to,
             oldest_skipped = %oldest_skipped,
             oldest_kept = %oldest_kept,
             cap = CATCH_UP_MAX_DAYS,
-            "eod catch_up: too many backlogged days; processing only the most recent \
-             CATCH_UP_MAX_DAYS. Older day_key rows likely need manual cleanup."
+            "eod catch_up: too many backlogged days; processing only the most recent CATCH_UP_MAX_DAYS"
         );
         candidates.drain(..drop_to);
     }
@@ -127,79 +127,6 @@ fn current_cfg(state: &AppState) -> Cfg {
 mod tests {
     use super::*;
     use crate::eod::test_support::*;
-
-    #[test]
-    fn catch_up_only_processes_days_present_in_day_key_skipping_empty_calendar_days() {
-        // Today = 2026-04-30 12:00 +07. Seed a stale day_key for 2020-01-01
-        // (years before today) plus a real order on 2026-04-27. The legacy
-        // behavior (days_between(earliest, today)) would iterate >2,000
-        // calendar days; the new behavior only iterates days that actually
-        // have a day_key row.
-        let rig = seed_app_state_at(2026, 4, 27, 7, 0, 0); // 14:00 +07 → BD 2026-04-27
-        place_test_order(&rig);
-        // Manually seed a stale wrapped DEK row — bypass crypto since the
-        // value is opaque to catch_up (it just reads the day string), and an
-        // empty-day run_eod still succeeds.
-        rig.state
-            .master
-            .lock()
-            .unwrap()
-            .put_dek("2020-01-01", &[0u8; 32], 0)
-            .unwrap();
-        // Advance to 2026-04-30 12:00 +07 (07:00 UTC) — +71h from 07:00 UTC
-        // on 2026-04-27.
-        rig.clock.advance_minutes(71 * 60 - 2 * 60); // → 2026-04-30 04:00 UTC
-        rig.clock.advance_minutes(60); // → 05:00 UTC = 12:00 +07
-
-        catch_up(&rig.state).unwrap();
-
-        // 2026-04-27 had real activity → ran successfully.
-        assert_eq!(eod_runs_status(&rig.state, "2026-04-27"), "ok");
-        // 2020-01-01 was in day_key → processed too (empty-day run is OK).
-        assert_eq!(eod_runs_status(&rig.state, "2020-01-01"), "ok");
-        // Days that are NOT in day_key (the >2,000 calendar days between
-        // 2020-01-01 and 2026-04-27, plus 2026-04-28/29) must NOT have
-        // eod_runs rows — the legacy iteration bug would have created them.
-        assert_eq!(eod_runs_status(&rig.state, "2020-01-02"), "");
-        assert_eq!(eod_runs_status(&rig.state, "2023-06-15"), "");
-        assert_eq!(eod_runs_status(&rig.state, "2026-04-28"), "");
-        assert_eq!(eod_runs_status(&rig.state, "2026-04-29"), "");
-    }
-
-    #[test]
-    fn catch_up_caps_at_max_days_dropping_oldest() {
-        // Seed 95 candidate day_key rows (older than today). With the cap
-        // at CATCH_UP_MAX_DAYS=90, the 5 oldest must be skipped.
-        let rig = seed_app_state_at(2026, 4, 30, 7, 0, 0); // 14:00 +07 → BD 2026-04-30
-        // Use synthetic ISO dates well before today. Pick 95 distinct days
-        // in the year 2024 (Jan–Apr roughly).
-        let mut seeded: Vec<String> = Vec::new();
-        for i in 0..95 {
-            let day = format!("2024-{:02}-{:02}", 1 + (i / 28) as u32, 1 + (i % 28) as u32);
-            rig.state
-                .master
-                .lock()
-                .unwrap()
-                .put_dek(&day, &[0u8; 32], 0)
-                .unwrap();
-            seeded.push(day);
-        }
-        seeded.sort();
-
-        catch_up(&rig.state).unwrap();
-
-        // Five oldest must be skipped (no eod_runs row).
-        for day in &seeded[..5] {
-            assert_eq!(
-                eod_runs_status(&rig.state, day),
-                "",
-                "{day} should be skipped by cap"
-            );
-        }
-        // Newest must be processed.
-        assert_eq!(eod_runs_status(&rig.state, &seeded[94]), "ok");
-        assert_eq!(eod_runs_status(&rig.state, &seeded[5]), "ok");
-    }
 
     #[test]
     fn catch_up_processes_old_unprocessed_days() {
