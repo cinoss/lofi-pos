@@ -1,0 +1,15 @@
+[package]
+name = "bouncer-mock"
+version = "0.0.1"
+edition = "2021"
+
+[dependencies]
+axum = "0.7"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+hex = "0.4"
+blake3 = "1"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+tokio-util = "0.7"
