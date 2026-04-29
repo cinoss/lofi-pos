@@ -1,12 +1,27 @@
 //! HTTP client for the bouncer sidecar (localhost:7879 by default).
 //!
 //! Wire protocol per `docs/superpowers/specs/2026-04-29-bouncer-sidecar-design.md`.
-//! Blocking reqwest is used to keep call sites simple; the cashier server task
-//! calls these from `spawn_blocking` or background workers.
+//!
+//! The underlying transport is `reqwest::blocking`, which internally owns a
+//! tokio runtime. To keep callers safe by construction we expose two
+//! flavours of every request:
+//!
+//!   * `*_blocking` — the raw blocking call. ONLY safe to invoke from a
+//!     pure-sync context (process startup, CLI entry points, tests with no
+//!     ambient tokio runtime).
+//!   * the same name without the suffix — an `async fn` that offloads the
+//!     blocking call to `tokio::task::spawn_blocking`. This is the form
+//!     async tasks (the EOD scheduler, the print-queue worker, axum
+//!     handlers) MUST use; calling the `*_blocking` variant from inside a
+//!     tokio task can panic on the inner reqwest runtime.
+//!
+//! The inner `reqwest::blocking::Client` is built eagerly in
+//! [`BouncerClient::new`] (which runs at app startup, before any tokio task
+//! is dispatched) so the lazy-init code path that would otherwise allocate
+//! an internal runtime from inside async context is eliminated entirely.
 
 use crate::error::{AppError, AppResult};
 use serde::Deserialize;
-use std::sync::OnceLock;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct SeedRow {
@@ -16,70 +31,61 @@ pub struct SeedRow {
     pub seed_hex: String,
 }
 
-/// Blocking HTTP client for the bouncer.
-///
-/// The internal `reqwest::blocking::Client` is built lazily on first use so
-/// that constructing a `BouncerClient` from inside an async context (e.g.
-/// `#[tokio::test]`) does not allocate a tokio runtime that would later fail
-/// to drop.
+/// Bouncer HTTP client.
+#[derive(Clone)]
 pub struct BouncerClient {
     base: String,
-    http: OnceLock<reqwest::blocking::Client>,
+    http: reqwest::blocking::Client,
 }
 
 impl BouncerClient {
+    /// Build a new client. Constructs the inner blocking HTTP client eagerly
+    /// so its tokio runtime is allocated on a dedicated background thread
+    /// before any async task that wraps a blocking call ever runs. Callers
+    /// SHOULD invoke this from a sync startup context.
     pub fn new(base: impl Into<String>) -> Self {
+        let http = reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(5))
+            .build()
+            .expect("build blocking http client");
         Self {
             base: base.into(),
-            http: OnceLock::new(),
+            http,
         }
-    }
-
-    fn http(&self) -> &reqwest::blocking::Client {
-        self.http.get_or_init(|| {
-            reqwest::blocking::Client::builder()
-                .timeout(std::time::Duration::from_secs(5))
-                .build()
-                .expect("build blocking http client")
-        })
     }
 
     pub fn base(&self) -> &str {
         &self.base
     }
 
-    pub fn health(&self) -> AppResult<()> {
+    // ---- blocking variants (startup / CLI / sync tests only) -----------
+
+    pub fn health_blocking(&self) -> AppResult<()> {
         let r = self
-            .http()
+            .http
             .get(format!("{}/health", self.base))
             .send()
             .map_err(|e| AppError::Internal(format!("bouncer health: {e}")))?;
         if !r.status().is_success() {
-            return Err(AppError::Internal(format!(
-                "bouncer health {}",
-                r.status()
-            )));
+            return Err(AppError::Internal(format!("bouncer health {}", r.status())));
         }
         Ok(())
     }
 
-    pub fn list_seeds(&self) -> AppResult<Vec<SeedRow>> {
+    pub fn list_seeds_blocking(&self) -> AppResult<Vec<SeedRow>> {
         let r = self
-            .http()
+            .http
             .get(format!("{}/seeds", self.base))
             .send()
             .map_err(|e| AppError::Internal(format!("bouncer seeds: {e}")))?;
         if !r.status().is_success() {
-            return Err(AppError::Internal(format!(
-                "bouncer seeds {}",
-                r.status()
-            )));
+            return Err(AppError::Internal(format!("bouncer seeds {}", r.status())));
         }
         r.json()
             .map_err(|e| AppError::Internal(format!("bouncer seeds parse: {e}")))
     }
 
-    pub fn print(
+    pub fn print_blocking(
         &self,
         kind: &str,
         payload: &serde_json::Value,
@@ -91,21 +97,18 @@ impl BouncerClient {
             "target_printer_id": target,
         });
         let r = self
-            .http()
+            .http
             .post(format!("{}/print", self.base))
             .json(&body)
             .send()
             .map_err(|e| AppError::Internal(format!("bouncer print: {e}")))?;
         if !r.status().is_success() {
-            return Err(AppError::Internal(format!(
-                "bouncer print {}",
-                r.status()
-            )));
+            return Err(AppError::Internal(format!("bouncer print {}", r.status())));
         }
         Ok(())
     }
 
-    pub fn post_report(
+    pub fn post_report_blocking(
         &self,
         business_day: &str,
         generated_at: i64,
@@ -117,19 +120,54 @@ impl BouncerClient {
             "report": report,
         });
         let r = self
-            .http()
+            .http
             .post(format!("{}/reports/eod", self.base))
             .json(&body)
             .send()
             .map_err(|e| AppError::Internal(format!("bouncer report: {e}")))?;
         if !r.status().is_success() {
-            return Err(AppError::Internal(format!(
-                "bouncer report {}",
-                r.status()
-            )));
+            return Err(AppError::Internal(format!("bouncer report {}", r.status())));
         }
         Ok(())
     }
+
+    // ---- async wrappers (any tokio task) -------------------------------
+
+    pub async fn print(
+        &self,
+        kind: &str,
+        payload: &serde_json::Value,
+        target: Option<&str>,
+    ) -> AppResult<()> {
+        let me = self.clone();
+        let kind = kind.to_string();
+        let payload = payload.clone();
+        let target = target.map(|s| s.to_string());
+        spawn_blocking_result(move || me.print_blocking(&kind, &payload, target.as_deref())).await
+    }
+
+    pub async fn post_report(
+        &self,
+        business_day: &str,
+        generated_at: i64,
+        report: &serde_json::Value,
+    ) -> AppResult<()> {
+        let me = self.clone();
+        let day = business_day.to_string();
+        let report = report.clone();
+        spawn_blocking_result(move || me.post_report_blocking(&day, generated_at, &report)).await
+    }
+}
+
+/// Helper: run a blocking HTTP closure on the blocking pool and join.
+async fn spawn_blocking_result<T, F>(f: F) -> AppResult<T>
+where
+    F: FnOnce() -> AppResult<T> + Send + 'static,
+    T: Send + 'static,
+{
+    tokio::task::spawn_blocking(f)
+        .await
+        .unwrap_or_else(|e| Err(AppError::Internal(format!("bouncer join: {e}"))))
 }
 
 #[cfg(test)]
@@ -183,11 +221,11 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn health_ok() {
+    async fn health_blocking_ok_via_spawn_blocking() {
         let (base, shutdown) = spawn_stub().await;
         tokio::task::spawn_blocking(move || {
             let client = BouncerClient::new(base);
-            client.health().unwrap();
+            client.health_blocking().unwrap();
         })
         .await
         .unwrap();
@@ -195,11 +233,11 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn list_seeds_returns_one() {
+    async fn list_seeds_blocking_returns_one() {
         let (base, shutdown) = spawn_stub().await;
         let rows = tokio::task::spawn_blocking(move || {
             let client = BouncerClient::new(base);
-            client.list_seeds().unwrap()
+            client.list_seeds_blocking().unwrap()
         })
         .await
         .unwrap();
@@ -210,38 +248,43 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn print_ok() {
+    async fn print_async_ok() {
         let (base, shutdown) = spawn_stub().await;
-        tokio::task::spawn_blocking(move || {
-            let client = BouncerClient::new(base);
-            client
-                .print("kitchen", &serde_json::json!({"x":1}), Some("kitchen-1"))
-                .unwrap();
-        })
-        .await
-        .unwrap();
+        // Build the client on the blocking pool so its inner reqwest
+        // runtime is owned by a thread we're allowed to drop later (the
+        // production startup path runs `BouncerClient::new` from a
+        // genuinely sync context, so this isn't a real-world concern).
+        let client = tokio::task::spawn_blocking(move || BouncerClient::new(base))
+            .await
+            .unwrap();
+        client
+            .print("kitchen", &serde_json::json!({"x":1}), Some("kitchen-1"))
+            .await
+            .unwrap();
+        // Drop the client off-runtime too.
+        tokio::task::spawn_blocking(move || drop(client)).await.unwrap();
         let _ = shutdown.send(());
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn post_report_ok() {
+    async fn post_report_async_ok() {
         let (base, shutdown) = spawn_stub().await;
-        tokio::task::spawn_blocking(move || {
-            let client = BouncerClient::new(base);
-            client
-                .post_report("2026-04-29", 1_700_000_000, &serde_json::json!({"k":"v"}))
-                .unwrap();
-        })
-        .await
-        .unwrap();
+        let client = tokio::task::spawn_blocking(move || BouncerClient::new(base))
+            .await
+            .unwrap();
+        client
+            .post_report("2026-04-29", 1_700_000_000, &serde_json::json!({"k":"v"}))
+            .await
+            .unwrap();
+        tokio::task::spawn_blocking(move || drop(client)).await.unwrap();
         let _ = shutdown.send(());
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn health_fails_when_unreachable() {
+    async fn health_blocking_fails_when_unreachable() {
         let r = tokio::task::spawn_blocking(|| {
             let client = BouncerClient::new("http://127.0.0.1:1");
-            client.health()
+            client.health_blocking()
         })
         .await
         .unwrap();

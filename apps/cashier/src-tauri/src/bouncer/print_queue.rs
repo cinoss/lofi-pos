@@ -22,22 +22,37 @@ pub fn spawn(state: Arc<AppState>) {
             };
             match next {
                 Ok(Some(job)) => {
-                    let payload: serde_json::Value =
-                        serde_json::from_str(&job.payload_json).unwrap_or(serde_json::Value::Null);
-                    let bouncer = state.bouncer.clone();
-                    let target = job.target.clone();
-                    let kind = job.kind.clone();
                     let job_id = job.id;
                     let attempts = job.attempts;
-                    // The blocking reqwest call goes through spawn_blocking so
-                    // we don't stall the runtime if the bouncer is slow.
-                    let result = tokio::task::spawn_blocking(move || {
-                        bouncer.print(&kind, &payload, target.as_deref())
-                    })
-                    .await
-                    .unwrap_or_else(|e| {
-                        Err(crate::error::AppError::Internal(format!("join: {e}")))
-                    });
+                    // Malformed JSON in the queue row means this print is
+                    // unrecoverable — sending `null` to the bouncer would
+                    // silently lose the artifact. Drop the row and surface
+                    // the error in the audit log.
+                    let payload: serde_json::Value =
+                        match serde_json::from_str(&job.payload_json) {
+                            Ok(v) => v,
+                            Err(e) => {
+                                tracing::error!(
+                                    job_id,
+                                    error = %e,
+                                    payload_preview = %truncate(&job.payload_json, 200),
+                                    "print queue: malformed payload_json; dropping job (data loss for this print)"
+                                );
+                                if let Err(de) =
+                                    state.master.lock().unwrap().delete_print_job(job_id)
+                                {
+                                    tracing::error!(?de, job_id, "print queue: delete of malformed job failed");
+                                }
+                                continue;
+                            }
+                        };
+                    // The bouncer client's `print` method is async and
+                    // internally offloads the blocking reqwest call to
+                    // `spawn_blocking`, so we can await it directly.
+                    let result = state
+                        .bouncer
+                        .print(&job.kind, &payload, job.target.as_deref())
+                        .await;
                     match result {
                         Ok(()) => {
                             if let Err(e) = state.master.lock().unwrap().delete_print_job(job_id) {
@@ -81,6 +96,19 @@ pub fn backoff_for(attempts: i64) -> i64 {
     }
 }
 
+fn truncate(s: &str, max: usize) -> &str {
+    if s.len() <= max {
+        s
+    } else {
+        // Avoid splitting a UTF-8 codepoint; back off to a char boundary.
+        let mut end = max;
+        while !s.is_char_boundary(end) {
+            end -= 1;
+        }
+        &s[..end]
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -91,5 +119,12 @@ mod tests {
         assert!(backoff_for(1) < backoff_for(2));
         assert!(backoff_for(2) < backoff_for(3));
         assert_eq!(backoff_for(4), backoff_for(99));
+    }
+
+    #[test]
+    fn truncate_handles_utf8_boundary() {
+        let s = "héllo";
+        // limit at 2 lands inside the é (2-byte char); truncate must not panic.
+        assert!(truncate(s, 2).len() <= 2);
     }
 }

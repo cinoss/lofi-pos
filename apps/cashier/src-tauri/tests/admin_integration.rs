@@ -34,7 +34,13 @@ async fn boot_admin_rig() -> Rig {
     let master = Arc::new(Mutex::new(Master::open_in_memory().unwrap()));
     let events = Arc::new(EventStore::open_in_memory().unwrap());
     let seed_cache = Arc::new(SeedCache::from_seeds("test", vec![("test".into(), [42u8; 32])]));
-    let bouncer = Arc::new(BouncerClient::new("http://127.0.0.1:1"));
+    // BouncerClient eagerly builds a reqwest::blocking client; construct it
+    // off-runtime so the inner tokio runtime can be dropped cleanly later.
+    let bouncer = Arc::new(
+        tokio::task::spawn_blocking(|| BouncerClient::new("http://127.0.0.1:1"))
+            .await
+            .unwrap(),
+    );
     let mock_clock = Arc::new(MockClock::at_ymd_hms(2026, 4, 27, 12, 0, 0));
     let clock: Arc<dyn Clock> = mock_clock.clone();
     let tz = FixedOffset::east_opt(7 * 3600).unwrap();
@@ -404,7 +410,11 @@ async fn ui_admin_serves_index_html_with_spa_fallback() {
     let master = Arc::new(Mutex::new(Master::open_in_memory().unwrap()));
     let events = Arc::new(EventStore::open_in_memory().unwrap());
     let seed_cache = Arc::new(SeedCache::from_seeds("test", vec![("test".into(), [42u8; 32])]));
-    let bouncer = Arc::new(BouncerClient::new("http://127.0.0.1:1"));
+    let bouncer = Arc::new(
+        tokio::task::spawn_blocking(|| BouncerClient::new("http://127.0.0.1:1"))
+            .await
+            .unwrap(),
+    );
     let mock_clock = Arc::new(MockClock::at_ymd_hms(2026, 4, 27, 12, 0, 0));
     let clock: Arc<dyn Clock> = mock_clock.clone();
     let tz = FixedOffset::east_opt(7 * 3600).unwrap();

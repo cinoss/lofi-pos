@@ -9,6 +9,7 @@
 use crate::bouncer::client::BouncerClient;
 use crate::error::{AppError, AppResult};
 use std::collections::HashMap;
+use zeroize::Zeroizing;
 
 /// Deterministic fallback seed id. Tagged on every event written while the
 /// cashier is in degraded mode.
@@ -22,8 +23,11 @@ pub fn fallback_seed_bytes() -> [u8; 32] {
     *blake3::hash(b"lofi-pos-fallback-seed-2026-v1").as_bytes()
 }
 
+/// Wrap raw seed material so it is wiped from memory on drop.
+type SeedBytes = Zeroizing<[u8; 32]>;
+
 pub struct SeedCache {
-    by_id: HashMap<String, [u8; 32]>,
+    by_id: HashMap<String, SeedBytes>,
     default_id: String,
     pub degraded: bool,
 }
@@ -33,15 +37,28 @@ impl SeedCache {
     /// no seeds, no default) fall back to fallback-only and mark the cache
     /// as `degraded`. Always returns Ok so cashier startup is never blocked.
     pub fn fetch_or_fallback(client: &BouncerClient) -> Self {
-        let mut by_id: HashMap<String, [u8; 32]> = HashMap::new();
+        let mut by_id: HashMap<String, SeedBytes> = HashMap::new();
         // Always include the fallback so degraded-mode events written across
         // boots remain decryptable.
-        by_id.insert(FALLBACK_SEED_ID.to_string(), fallback_seed_bytes());
+        by_id.insert(FALLBACK_SEED_ID.to_string(), Zeroizing::new(fallback_seed_bytes()));
 
-        match client.list_seeds() {
+        match client.list_seeds_blocking() {
             Ok(rows) if !rows.is_empty() => {
                 let mut bouncer_default: Option<String> = None;
                 for r in rows {
+                    // Reserved id: the bouncer must NOT ship a seed named
+                    // `fallback`. If it does, refuse the row — silently
+                    // overwriting our local fallback would render any events
+                    // written under the original fallback during a previous
+                    // degraded boot undecryptable.
+                    if r.id == FALLBACK_SEED_ID {
+                        tracing::error!(
+                            seed_id = %r.id,
+                            "bouncer returned a seed with the reserved id 'fallback'; \
+                             refusing to overwrite local fallback seed (bouncer misconfiguration)"
+                        );
+                        continue;
+                    }
                     let bytes = match hex::decode(&r.seed_hex) {
                         Ok(b) if b.len() == 32 => b,
                         _ => {
@@ -52,7 +69,7 @@ impl SeedCache {
                             continue;
                         }
                     };
-                    let mut arr = [0u8; 32];
+                    let mut arr = Zeroizing::new([0u8; 32]);
                     arr.copy_from_slice(&bytes);
                     if r.default {
                         bouncer_default = Some(r.id.clone());
@@ -84,10 +101,10 @@ impl SeedCache {
     /// pairs. Used by tests and `eod::test_support`; not called from the
     /// production startup path (which goes through `fetch_or_fallback`).
     pub fn from_seeds(default_id: impl Into<String>, seeds: Vec<(String, [u8; 32])>) -> Self {
-        let mut by_id = HashMap::new();
-        by_id.insert(FALLBACK_SEED_ID.to_string(), fallback_seed_bytes());
+        let mut by_id: HashMap<String, SeedBytes> = HashMap::new();
+        by_id.insert(FALLBACK_SEED_ID.to_string(), Zeroizing::new(fallback_seed_bytes()));
         for (id, b) in seeds {
-            by_id.insert(id, b);
+            by_id.insert(id, Zeroizing::new(b));
         }
         let default_id = default_id.into();
         assert!(by_id.contains_key(&default_id), "default not in seeds");
@@ -110,6 +127,7 @@ impl SeedCache {
     pub fn get(&self, id: &str) -> AppResult<&[u8; 32]> {
         self.by_id
             .get(id)
+            .map(|z| &**z)
             .ok_or_else(|| AppError::Crypto(format!("seed expired for id {id}")))
     }
 }
@@ -117,6 +135,9 @@ impl SeedCache {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::Json;
+    use axum::routing::get;
+    use std::net::SocketAddr;
 
     #[test]
     fn fetch_with_unreachable_bouncer_yields_degraded_with_fallback() {
@@ -150,5 +171,65 @@ mod tests {
         assert!(!cache.degraded);
         assert_eq!(cache.default_id(), "a");
         assert_eq!(cache.default_seed(), &[9u8; 32]);
+    }
+
+    /// Spawn an axum stub returning the supplied JSON body for `/seeds`.
+    async fn spawn_seeds_stub(body: serde_json::Value) -> (String, tokio::sync::oneshot::Sender<()>) {
+        let app = axum::Router::new().route(
+            "/seeds",
+            get(move || {
+                let body = body.clone();
+                async move { Json(body) }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], 0)))
+            .await
+            .unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (tx, rx) = tokio::sync::oneshot::channel::<()>();
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, app)
+                .with_graceful_shutdown(async move {
+                    let _ = rx.await;
+                })
+                .await;
+        });
+        (format!("http://{addr}"), tx)
+    }
+
+    /// A bouncer that ships a seed named "fallback" with different bytes
+    /// must NOT overwrite our hard-coded fallback (would silently break
+    /// decryption of events written under the original fallback).
+    #[tokio::test(flavor = "multi_thread")]
+    async fn bouncer_fallback_id_collision_does_not_overwrite_local_fallback() {
+        let bogus_seed_hex =
+            "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
+        let body = serde_json::json!([
+            {
+                "id": "fallback",
+                "label": "Bogus fallback from bouncer",
+                "default": true,
+                "seed_hex": bogus_seed_hex,
+            },
+            {
+                "id": "primary",
+                "label": "Real default",
+                "default": true,
+                "seed_hex": "0000000000000000000000000000000000000000000000000000000000000001",
+            }
+        ]);
+        let (base, shutdown) = spawn_seeds_stub(body).await;
+        let cache = tokio::task::spawn_blocking(move || {
+            SeedCache::fetch_or_fallback(&BouncerClient::new(base))
+        })
+        .await
+        .unwrap();
+        let _ = shutdown.send(());
+
+        // Local fallback bytes are intact (not the bogus 0xdeadbeef…).
+        let got = cache.get(FALLBACK_SEED_ID).unwrap();
+        assert_eq!(got, &fallback_seed_bytes());
+        // primary still loaded fine.
+        assert!(cache.get("primary").is_ok());
     }
 }

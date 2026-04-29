@@ -62,7 +62,9 @@ impl Settings {
 }
 
 /// Tauri-managed shared state. Held by the runtime for process lifetime;
-/// dropped on shutdown (KEK zeroizes via `ZeroizeOnDrop`).
+/// dropped on shutdown. Seed material lives only in the bouncer-fetched
+/// `SeedCache`, where each seed is wrapped in `zeroize::Zeroizing` so the
+/// bytes are wiped from RAM when the cache drops.
 ///
 /// Note: the canonical `EventService` instance lives inside `commands`
 /// (`commands.event_service`); we deliberately do not store a duplicate here.

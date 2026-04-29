@@ -38,7 +38,11 @@ async fn boot_rig() -> Rig {
         "test",
         vec![("test".into(), [42u8; 32])],
     ));
-    let bouncer = Arc::new(BouncerClient::new("http://127.0.0.1:1"));
+    let bouncer = Arc::new(
+        tokio::task::spawn_blocking(|| BouncerClient::new("http://127.0.0.1:1"))
+            .await
+            .unwrap(),
+    );
     let mock_clock = Arc::new(MockClock::at_ymd_hms(2026, 4, 27, 12, 0, 0));
     let clock: Arc<dyn Clock> = mock_clock.clone();
     let tz = FixedOffset::east_opt(7 * 3600).unwrap();

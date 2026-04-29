@@ -27,7 +27,19 @@ const CATCH_UP_MAX_DAYS: usize = 90;
 /// Spawn the EOD scheduler on the current Tokio runtime.
 pub fn spawn(state: Arc<AppState>) {
     tokio::spawn(async move {
-        if let Err(e) = catch_up(&state) {
+        // `run_eod` and `catch_up` are synchronous and end up calling the
+        // blocking reqwest bouncer client; offload them to the blocking
+        // pool so we don't panic the runtime by invoking blocking reqwest
+        // from inside a tokio task.
+        let s = state.clone();
+        if let Err(e) = tokio::task::spawn_blocking(move || catch_up(&s))
+            .await
+            .unwrap_or_else(|join_err| {
+                Err(crate::error::AppError::Internal(format!(
+                    "catch_up join: {join_err}"
+                )))
+            })
+        {
             tracing::error!(?e, "eod catch-up failed");
         }
         loop {
@@ -46,7 +58,16 @@ pub fn spawn(state: Arc<AppState>) {
             let cfg2 = current_cfg(&state);
             let now2 = state.clock.now_ms();
             let just_closed = business_day_for(now2 - 1000, cfg2);
-            if let Err(e) = run_eod(&state, &just_closed) {
+            let s = state.clone();
+            let day = just_closed.clone();
+            let r = tokio::task::spawn_blocking(move || run_eod(&s, &day))
+                .await
+                .unwrap_or_else(|join_err| {
+                    Err(crate::error::AppError::Internal(format!(
+                        "run_eod join: {join_err}"
+                    )))
+                });
+            if let Err(e) = r {
                 tracing::error!(day = %just_closed, ?e, "eod run failed");
             }
         }

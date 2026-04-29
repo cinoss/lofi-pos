@@ -46,7 +46,7 @@ pub fn run() {
             let bouncer_url = std::env::var("LOFI_BOUNCER_URL")
                 .unwrap_or_else(|_| "http://127.0.0.1:7879".into());
             let bouncer = Arc::new(bouncer::client::BouncerClient::new(bouncer_url));
-            if let Err(e) = bouncer.health() {
+            if let Err(e) = bouncer.health_blocking() {
                 tracing::warn!(error = %e, "bouncer health probe failed; will attempt seed fetch anyway");
             }
             let seed_cache = Arc::new(bouncer::seed_cache::SeedCache::fetch_or_fallback(&bouncer));

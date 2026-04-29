@@ -61,9 +61,13 @@ pub fn run_eod(state: &AppState, business_day: &str) -> AppResult<RunResult> {
     //    delete event rows.
     let payload = serde_json::to_value(&report)
         .map_err(|e| AppError::Internal(format!("report to_value: {e}")))?;
+    // `run_eod` is a synchronous function; production callers (the EOD
+    // scheduler and the catch-up loop) wrap the entire call in
+    // `tokio::task::spawn_blocking`, so it is safe to invoke the blocking
+    // bouncer client directly here.
     if let Err(e) = state
         .bouncer
-        .post_report(business_day, state.clock.now_ms(), &payload)
+        .post_report_blocking(business_day, state.clock.now_ms(), &payload)
     {
         if let Err(me) = mark_failed(state, business_day, &e.to_string()) {
             tracing::error!(day = %business_day, err = %me, "eod mark_failed failed");
