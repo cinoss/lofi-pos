@@ -73,7 +73,9 @@ Decisions:
 - **`event.seed_id` replaces `event.key_id`.** Since this is a destructive recreate (pre-prod), no backfill.
 - **DEK derivation: `blake3(seed_bytes, business_day_str.as_bytes())`.** 32-byte output. `blake3` crate. Fast, no IV/salt needed (deterministic by design — same seed + same day = same DEK).
 - **Print queue persists to a small SQLite table** in master.db: `print_queue (id INTEGER PK, kind TEXT, payload_json TEXT, target TEXT NULL, attempts INTEGER, last_error TEXT NULL, enqueued_at INTEGER)`. Worker drains FIFO, deletes on success.
-- **Bootstrap is hard-fail.** If `GET /health` or `GET /seeds` fails at startup, cashier prints a clear message and exits non-zero. No cached-fallback behavior.
+- **Bootstrap is degraded-tolerant.** Cashier ships with a hard-coded fallback seed (`id="fallback"`, deterministic constant 32 bytes). If `GET /health` or `GET /seeds` fails, cashier starts in degraded mode using fallback for encrypts; logs warning + UI banner. To exit degraded, restart cashier with bouncer reachable.
+- **Per-aggregate sequence (`agg_seq`)** assigned at write time. UNIQUE(aggregate_id, agg_seq). Used by warm-up to detect holes.
+- **Hole-tolerant warm-up:** if any event in an aggregate fails decrypt OR `agg_seq` has a gap, drop the entire aggregate (do not partially apply). Logged with reason.
 - **Mock bouncer is a separate Cargo binary** in `apps/bouncer-mock`, NOT a Tauri sidecar (yet). Run with `cargo run -p bouncer-mock` in dev. Production deployment: real bouncer runs separately.
 - **EOD report POST is synchronous** — EOD does not mark `ok` until the POST succeeds. On failure, `eod_runs.status = 'failed'`, `error` populated, retried by next scheduler firing or manual `cashier eod-now`.
 - **Reports are no longer queryable from cashier**. The current admin Reports route surfaces `daily_report` rows; after this work the table is gone, so the route either gets repointed to bouncer (NOT in scope) or returns "off-box" empty state. We'll make it return an explicit "reports are stored by bouncer; check bouncer for retrieval" empty state.
@@ -287,36 +289,52 @@ use crate::error::{AppError, AppResult};
 use std::collections::HashMap;
 use std::sync::Arc;
 
+/// Hard-coded fallback. Used when bouncer is unreachable at startup.
+/// Must be deterministic so degraded-mode events written across restarts
+/// remain decryptable.
+pub const FALLBACK_SEED_ID: &str = "fallback";
+const FALLBACK_SEED_BYTES: [u8; 32] = *blake3::hash(b"lofi-pos-fallback-seed-2026-v1").as_bytes();
+
 pub struct SeedCache {
     by_id: HashMap<String, [u8; 32]>,
     default_id: String,
+    pub degraded: bool,
 }
 
 impl SeedCache {
-    pub fn fetch(client: &BouncerClient) -> AppResult<Self> {
-        let rows = client.list_seeds()?;
-        if rows.is_empty() {
-            return Err(AppError::Internal("bouncer returned zero seeds".into()));
-        }
-        let mut by_id = HashMap::new();
-        let mut default_id: Option<String> = None;
-        for r in rows {
-            let bytes = hex::decode(&r.seed_hex).map_err(|e| AppError::Internal(format!("seed hex: {e}")))?;
-            if bytes.len() != 32 {
-                return Err(AppError::Internal(format!("seed {} wrong length: {}", r.id, bytes.len())));
-            }
-            let mut arr = [0u8; 32];
-            arr.copy_from_slice(&bytes);
-            if r.default {
-                if default_id.is_some() {
-                    return Err(AppError::Internal("multiple default seeds".into()));
+    /// Try bouncer first; fall back to fallback-only if unreachable. Always returns Ok.
+    pub fn fetch_or_fallback(client: &BouncerClient) -> Self {
+        let mut by_id: HashMap<String, [u8; 32]> = HashMap::new();
+        // Always include fallback so degraded-mode events written across boots remain decryptable.
+        by_id.insert(FALLBACK_SEED_ID.to_string(), FALLBACK_SEED_BYTES);
+
+        match client.list_seeds() {
+            Ok(rows) if !rows.is_empty() => {
+                let mut bouncer_default: Option<String> = None;
+                for r in rows {
+                    let bytes = match hex::decode(&r.seed_hex) {
+                        Ok(b) if b.len() == 32 => b,
+                        _ => {
+                            tracing::error!(seed_id = %r.id, "bouncer returned malformed seed; ignoring");
+                            continue;
+                        }
+                    };
+                    let mut arr = [0u8; 32];
+                    arr.copy_from_slice(&bytes);
+                    if r.default {
+                        bouncer_default = Some(r.id.clone());
+                    }
+                    by_id.insert(r.id, arr);
                 }
-                default_id = Some(r.id.clone());
+                if let Some(default_id) = bouncer_default {
+                    return Self { by_id, default_id, degraded: false };
+                }
+                tracing::warn!("bouncer returned no default seed; entering degraded mode");
             }
-            by_id.insert(r.id, arr);
+            Ok(_) => tracing::warn!("bouncer returned zero seeds; entering degraded mode"),
+            Err(e) => tracing::warn!(error = %e, "bouncer unreachable; entering degraded mode"),
         }
-        let default_id = default_id.ok_or_else(|| AppError::Internal("no default seed".into()))?;
-        Ok(Self { by_id, default_id })
+        Self { by_id, default_id: FALLBACK_SEED_ID.to_string(), degraded: true }
     }
 
     pub fn default_id(&self) -> &str { &self.default_id }
@@ -324,6 +342,25 @@ impl SeedCache {
     pub fn get(&self, id: &str) -> AppResult<&[u8; 32]> {
         self.by_id.get(id).ok_or_else(|| AppError::Crypto(format!("seed expired for id {id}")))
     }
+}
+```
+
+Tests (add to seed_cache.rs):
+```rust
+#[test]
+fn fetch_with_unreachable_bouncer_yields_degraded_with_fallback() {
+    let client = BouncerClient::new("http://127.0.0.1:1");  // nothing listening
+    let cache = SeedCache::fetch_or_fallback(&client);
+    assert!(cache.degraded);
+    assert_eq!(cache.default_id(), FALLBACK_SEED_ID);
+    assert!(cache.get(FALLBACK_SEED_ID).is_ok());
+}
+
+#[test]
+fn fallback_bytes_are_stable_across_calls() {
+    let c1 = SeedCache::fetch_or_fallback(&BouncerClient::new("http://127.0.0.1:1"));
+    let c2 = SeedCache::fetch_or_fallback(&BouncerClient::new("http://127.0.0.1:1"));
+    assert_eq!(c1.default_seed(), c2.default_seed());
 }
 ```
 
@@ -462,21 +499,58 @@ CREATE TABLE event (
   ts                  INTEGER NOT NULL,
   type                TEXT NOT NULL,
   aggregate_id        TEXT NOT NULL,
+  agg_seq             INTEGER NOT NULL,
   actor_staff         INTEGER,
   actor_name          TEXT,
   override_staff_id   INTEGER,
   override_staff_name TEXT,
   payload_enc         BLOB NOT NULL,
-  seed_id             TEXT NOT NULL
+  seed_id             TEXT NOT NULL,
+  UNIQUE(aggregate_id, agg_seq)
 );
 CREATE INDEX idx_event_day      ON event(business_day);
-CREATE INDEX idx_event_agg      ON event(aggregate_id, id);
+CREATE INDEX idx_event_agg      ON event(aggregate_id, agg_seq);
 CREATE INDEX idx_event_day_type ON event(business_day, type);
 ```
 
-- [ ] **Step 3: events.rs field rename**
+`agg_seq` is the per-aggregate sequence number, assigned at insert time. Used by warm-up to detect missing events.
+
+- [ ] **Step 3: events.rs field rename + agg_seq computation**
 
 Search for `key_id` in `events.rs`; rename to `seed_id` in struct fields, SQL, and bindings.
+
+Add `agg_seq: i64` to `EventRow` and `AppendEvent`. In `append`, compute next agg_seq inside the same transaction:
+
+```rust
+pub fn append(&self, ev: AppendEvent<'_>) -> AppResult<i64> {
+    self.with_writer(|conn| {
+        let tx = conn.transaction()?;
+        let next_seq: i64 = tx.query_row(
+            "SELECT COALESCE(MAX(agg_seq), 0) + 1 FROM event WHERE aggregate_id = ?1",
+            params![ev.aggregate_id],
+            |r| r.get(0),
+        )?;
+        tx.execute(
+            "INSERT INTO event (business_day, ts, type, aggregate_id, agg_seq,
+                                actor_staff, actor_name, override_staff_id, override_staff_name,
+                                payload_enc, seed_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            params![ev.business_day, ev.ts, ev.event_type, ev.aggregate_id, next_seq,
+                    ev.actor_staff, ev.actor_name, ev.override_staff_id, ev.override_staff_name,
+                    ev.payload_enc, ev.seed_id],
+        )?;
+        let id = tx.last_insert_rowid();
+        tx.commit()?;
+        Ok(id)
+    })
+}
+```
+
+The transaction prevents agg_seq race when two writers append for the same aggregate concurrently. Tests:
+```rust
+#[test] fn agg_seq_starts_at_1_for_new_aggregate() { /* … */ }
+#[test] fn agg_seq_increments_per_aggregate_independently() { /* a:1,2  b:1  a:3 */ }
+```
 
 - [ ] **Step 4: master.rs cleanup**
 
@@ -495,6 +569,92 @@ git commit -m "refactor(store): drop dek+daily_report tables; rename key_id→se
 
 ---
 
+## Task 4.5: Hole-tolerant warm-up
+
+**Files:**
+- Modify: `apps/cashier/src-tauri/src/store/aggregate_store.rs` (warm_up logic)
+
+- [ ] **Step 1: warm_up algorithm**
+
+Replace the existing per-event apply loop with a two-pass:
+
+```rust
+pub fn warm_up(events: &EventStore, key_manager: &KeyManager, store: &mut AggregateStore) -> AppResult<WarmUpReport> {
+    // Pass 1: read all rows, group by aggregate_id, validate seq + decryptability
+    let rows = events.list_active()?;  // already ordered by (ts, id)
+    let mut by_agg: HashMap<String, Vec<(EventRow, AppResult<DomainEvent>)>> = HashMap::new();
+    for row in rows {
+        let decrypted = decrypt_row(key_manager, &row);
+        by_agg.entry(row.aggregate_id.clone()).or_default().push((row, decrypted));
+    }
+
+    let mut applied = 0;
+    let mut dropped = Vec::new();
+    let mut to_apply: Vec<(EventRow, DomainEvent)> = Vec::new();
+
+    for (aggregate_id, events) in by_agg {
+        // sequence check: every event's agg_seq must equal its 1-based position
+        let seq_ok = events.iter().enumerate().all(|(i, (row, _))| row.agg_seq == (i as i64) + 1);
+        let all_decrypted = events.iter().all(|(_, r)| r.is_ok());
+        if !seq_ok || !all_decrypted {
+            let reason = if !seq_ok { "sequence gap" } else { "decrypt failed" };
+            dropped.push((aggregate_id.clone(), reason.to_string()));
+            tracing::warn!(aggregate_id = %aggregate_id, reason = %reason, "warm-up dropping aggregate");
+            continue;
+        }
+        for (row, decrypted) in events {
+            to_apply.push((row, decrypted.unwrap()));
+            applied += 1;
+        }
+    }
+
+    // Re-sort by (ts, id) globally so cross-aggregate causality is preserved
+    to_apply.sort_by_key(|(row, _)| (row.ts, row.id));
+    for (row, ev) in to_apply {
+        apply(store, &ev, &row);
+    }
+    Ok(WarmUpReport { applied, dropped })
+}
+
+pub struct WarmUpReport {
+    pub applied: usize,
+    pub dropped: Vec<(String, String)>,
+}
+```
+
+- [ ] **Step 2: tests**
+
+```rust
+#[test]
+fn warm_up_drops_aggregate_with_seq_gap() {
+    // seed events for agg A: seq 1, 2, 4 (missing 3) — manually delete row by hand
+    // assert: A is dropped; other aggregates unaffected
+}
+
+#[test]
+fn warm_up_drops_aggregate_with_undecryptable_event() {
+    // seed events for agg A: encrypted with a seed that's not in the cache
+    // assert: A is dropped; report contains (A, "decrypt failed")
+}
+
+#[test]
+fn warm_up_applies_clean_aggregates_normally() {
+    // happy path: 2 aggregates, all events seq-consecutive and decryptable
+    // assert: applied count matches; no dropped
+}
+```
+
+- [ ] **Step 3: cargo test aggregate_store**
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add -A
+git commit -m "feat(warm-up): hole-tolerant — drop aggregates with seq gaps or decrypt failures"
+```
+
+---
+
 ## Task 5: Bootstrap rewiring (lib.rs + cli.rs)
 
 **Files:**
@@ -503,30 +663,43 @@ git commit -m "refactor(store): drop dek+daily_report tables; rename key_id→se
 
 - [ ] **Step 1: lib.rs startup sequence**
 
-Pseudocode:
+Degraded-tolerant — never exits on bouncer failure:
+
 ```rust
 let bouncer_url = std::env::var("LOFI_BOUNCER_URL").unwrap_or_else(|_| "http://127.0.0.1:7879".into());
 let bouncer = Arc::new(BouncerClient::new(bouncer_url));
-bouncer.health().expect("bouncer not reachable; start bouncer service first");
-let seed_cache = Arc::new(SeedCache::fetch(&bouncer).expect("could not fetch seeds from bouncer"));
+let seed_cache = Arc::new(SeedCache::fetch_or_fallback(&bouncer));
+if seed_cache.degraded {
+    tracing::warn!("cashier started in DEGRADED mode (bouncer unreachable). New events use fallback seed; older events tagged with bouncer seeds will not decrypt this session.");
+}
 let key_manager = Arc::new(KeyManager::new(Arc::clone(&seed_cache)));
 
 // (other AppState construction follows; rotation::spawn removed)
 ```
 
-The `expect`s become formatted `eprintln!` + `std::process::exit(2)` for clean operator messages.
+Expose `degraded` on AppState so admin UI can show banner.
 
 - [ ] **Step 2: cli.rs (eod-now subcommand)**
 
 Same bouncer init flow; same hard-fail. Then runs `eod::runner::run_eod` which now calls bouncer.post_report.
 
-- [ ] **Step 3: integration test for hard-fail**
+- [ ] **Step 3: integration test for degraded mode**
 
 ```rust
-#[test]
-fn cashier_init_aborts_when_bouncer_unreachable() {
-    // attempt to construct AppState with an unreachable bouncer URL;
-    // expect the expected error path
+#[tokio::test]
+async fn cashier_init_succeeds_with_unreachable_bouncer_in_degraded_mode() {
+    let state = build_app_state_with_bouncer_url("http://127.0.0.1:1").await;
+    assert!(state.seed_cache.degraded);
+    assert_eq!(state.seed_cache.default_id(), "fallback");
+}
+
+#[tokio::test]
+async fn events_written_in_degraded_mode_are_decryptable_in_degraded_mode() {
+    let state = build_app_state_with_bouncer_url("http://127.0.0.1:1").await;
+    place_test_order(&state, ts).await;
+    // restart with same fallback (still no bouncer) — events still decrypt
+    let state2 = build_app_state_with_bouncer_url("http://127.0.0.1:1").await;
+    assert_aggregate_state_matches(&state2, ...);
 }
 ```
 
@@ -772,4 +945,5 @@ Remaining for follow-up:
 - Real bouncer implementation (other team's spec).
 - Tauri sidecar bundling of bouncer-mock for dev convenience.
 - Production deployment story (systemd unit / Windows service for bouncer).
-- Recovery story when bouncer is unreachable for an extended period (currently: cashier offline).
+- **`event.aggregate_id` plaintext leak** — count of distinct values per business_day reveals session/order count even when payloads are encrypted. Future spec to keyed-hash aggregate_id or pad with noise.
+- Live re-fetch of seeds from bouncer after degraded-mode startup (currently: restart required to recover).

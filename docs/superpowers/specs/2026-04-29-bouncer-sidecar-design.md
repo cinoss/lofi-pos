@@ -96,11 +96,16 @@ Cashier hits this once at startup. Failure → cashier refuses to start (hard-fa
 ### Bootstrap
 
 1. App starts. Reads `LOFI_BOUNCER_URL` (default `http://127.0.0.1:7879`).
-2. Calls `GET /health`. If non-200 or unreachable → fatal error, app exits with a clear message.
-3. Calls `GET /seeds`. Caches the full list in RAM. Identifies the one with `default=true` as the encrypt seed; stores all others by id for decrypts.
-4. Proceeds to normal startup (axum, scheduler, etc.).
+2. Calls `GET /health`. If reachable, calls `GET /seeds` and caches the full list in RAM, including which one is `default=true`.
+3. **Fallback always present.** The cashier ships with a hard-coded fallback seed (id `"fallback"`, deterministic constant bytes). The fallback is added to the cache regardless of bouncer state.
+4. **Encrypt-seed selection rule:**
+   - If bouncer fetch succeeded → use bouncer's `default=true` seed.
+   - If bouncer fetch failed (non-200, network error, timeout) → use the fallback seed. Cashier logs a degraded-mode warning at startup and on every minute thereafter; UI shows a banner.
+5. Proceeds to normal startup (axum, scheduler, etc.). Cashier stays in whichever mode it bootstrapped in for the entire process lifetime — to recover from degraded mode, **restart**.
 
-Seed cache is **never refreshed** during the process lifetime. To pick up a rotated default seed, restart the cashier. This matches the user's "in-mem cache for all key, only do it at start" decision.
+Seed cache is **never refreshed** during the process lifetime. To pick up a rotated default seed (or to exit degraded mode), restart the cashier.
+
+**Consequence in degraded mode:** new events encrypt under fallback seed; old events tagged with bouncer-only seed_ids become undecryptable until the cashier next boots with bouncer reachable. Warm-up handles this gracefully (see "Hole-tolerant warm-up" below).
 
 ### Key derivation
 
@@ -127,11 +132,34 @@ Note: `event.key_id` column is renamed to `seed_id` (semantic change; the day pa
 
 ```
 seed       = cache.get(row.seed_id)
-            // not found → AppError::Crypto("seed expired") (sidecar removed it)
+            // not found → AppError::Crypto("seed expired") (sidecar removed it,
+            // or cashier in degraded mode without that seed)
 dek        = blake3(seed.bytes, row.business_day.as_bytes())
 aad        = format!("{}|{}|{}|{}", row.business_day, row.event_type, row.aggregate_id, row.seed_id)
 plaintext  = aes_gcm.decrypt(dek, row.payload_enc, aad)
 ```
+
+### Hole-tolerant warm-up
+
+Each event row has `agg_seq INTEGER NOT NULL` — per-aggregate sequence number, assigned at write time as `MAX(agg_seq WHERE aggregate_id=?) + 1`. With UNIQUE(aggregate_id, agg_seq).
+
+Warm-up algorithm:
+1. Read all events for active business days, ordered by `(ts, id)`
+2. For each aggregate (group by aggregate_id):
+   - Collect all events
+   - Verify the agg_seq sequence is unbroken from 1..N (no gaps)
+   - Verify every event decrypts successfully
+   - **If ANY event fails decrypt OR any agg_seq is missing → drop the entire aggregate**: do not apply any of its events; log warning with aggregate_id and reason
+3. Apply surviving aggregates' events in `(ts, id)` order globally
+
+Effect: a session whose first OrderPlaced was encrypted under a seed_id we no longer have is dropped entirely — no half-applied state. Reports for the day still capture what was successfully applied.
+
+Holes happen when:
+- Cashier ran in degraded mode at some point (events tagged with fallback seed mixed with bouncer-seed events for the same session)
+- Bouncer rotated out a seed that was used mid-session
+- Pre-prod fiddling: someone deleted event rows manually
+
+This is opportunistic recovery, not a guarantee — the operational invariant is "stay in normal mode end-to-end for a session."
 
 ### Print
 
@@ -263,6 +291,10 @@ CREATE INDEX idx_event_day_type ON event(business_day, type);
 - **Coercion:** no defense (acknowledged previously).
 
 ---
+
+## Known follow-ups (acknowledged, not in this spec)
+
+- **`event.aggregate_id` is plaintext on disk.** Counts of distinct values per business_day reveal session/order counts to a forensic attacker even though payloads are encrypted. Mitigations require either keyed-hashing the aggregate_id (breaks cross-day session continuity unless careful) or noise rows. Track in a separate spec.
 
 ## Out of scope
 
