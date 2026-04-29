@@ -1,13 +1,9 @@
 //! Shared test helpers for EOD module tests (builder/runner/scheduler).
 //!
 //! Builds a fully-wired in-memory `AppState` (master.db + events.db, mock
-//! clock, throwaway broadcast channel) and exposes high-level "place an
-//! order"/"take a payment" helpers so tests don't have to re-thread the
-//! whole CommandService pipeline by hand.
-//!
-//! Not gated by `#[cfg(test)]` because the EOD integration smoke tests in
-//! `tests/` link against the lib and need access. Adds no production cost
-//! beyond a few hundred bytes.
+//! clock, in-process bouncer stub) and exposes high-level "place an order"
+//! helpers so tests don't have to re-thread the whole CommandService
+//! pipeline by hand.
 
 #![allow(dead_code)]
 
@@ -17,11 +13,13 @@ use crate::app_state::{AppState, Settings};
 use crate::auth::pin::hash_pin;
 use crate::auth::token::TokenClaims;
 use crate::auth::AuthService;
-use crate::crypto::Kek;
+use crate::bouncer::client::BouncerClient;
+use crate::bouncer::seed_cache::SeedCache;
 use crate::domain::event::{DomainEvent, OrderItemSpec, Route};
 use crate::domain::spot::SpotRef;
 use crate::services::command_service::CommandService;
 use crate::services::event_service::EventService;
+use crate::services::key_manager::KeyManager;
 use crate::services::locking::KeyMutex;
 use crate::store::aggregate_store::AggregateStore;
 use crate::store::events::EventStore;
@@ -29,7 +27,7 @@ use crate::store::master::Master;
 use crate::time::test_support::MockClock;
 use crate::time::Clock;
 use chrono::FixedOffset;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use uuid::Uuid;
 
 /// Cutoff hour shared across all EOD tests.
@@ -37,30 +35,88 @@ pub const TEST_CUTOFF: u32 = 11;
 /// +07:00, the production case.
 pub const TEST_TZ_SECONDS: i32 = 7 * 3600;
 
-/// In-memory AppState rig shared across the EOD tests. Owns the mock clock
-/// so tests can advance time, and a tempdir scoped to its lifetime.
+/// Local-process bouncer stub URL. Started lazily by `stub_bouncer_url`.
+static STUB_URL: OnceLock<String> = OnceLock::new();
+
+/// Spawn a single in-process axum stub on a random port and return its base
+/// URL. Subsequent calls return the same URL (the stub stays alive for the
+/// process lifetime). The stub accepts everything and returns 2xx.
+pub fn stub_bouncer_url() -> String {
+    STUB_URL
+        .get_or_init(|| {
+            // Bind synchronously on a dedicated runtime in its own thread.
+            let (tx, rx) = std::sync::mpsc::channel::<String>();
+            std::thread::spawn(move || {
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .unwrap();
+                rt.block_on(async move {
+                    use axum::routing::{get, post};
+                    use axum::Json;
+                    let app = axum::Router::new()
+                        .route("/health", get(|| async { Json(serde_json::json!({"ok":true})) }))
+                        .route(
+                            "/seeds",
+                            get(|| async {
+                                Json(serde_json::json!([{
+                                    "id": "stub-default",
+                                    "label": "Stub default",
+                                    "default": true,
+                                    "seed_hex": "0101010101010101010101010101010101010101010101010101010101010101"
+                                }]))
+                            }),
+                        )
+                        .route(
+                            "/print",
+                            post(|axum::Json(_): axum::Json<serde_json::Value>| async {
+                                Json(serde_json::json!({"queued": true}))
+                            }),
+                        )
+                        .route(
+                            "/reports/eod",
+                            post(|axum::Json(_): axum::Json<serde_json::Value>| async {
+                                Json(serde_json::json!({"stored": true}))
+                            }),
+                        );
+                    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+                    let addr = listener.local_addr().unwrap();
+                    tx.send(format!("http://{addr}")).unwrap();
+                    axum::serve(listener, app).await.unwrap();
+                });
+            });
+            rx.recv().unwrap()
+        })
+        .clone()
+}
+
 pub struct EodRig {
     pub state: Arc<AppState>,
     pub clock: Arc<MockClock>,
-    /// Owner's bearer claims — every test command runs as Owner so ACL
-    /// is never the thing under test here.
     pub owner: TokenClaims,
-    _tmp: tempfile::TempDir,
 }
 
-/// Build a fully-wired in-memory AppState. Frozen clock at the given UTC
-/// instant. Master DB pre-seeded with one Owner staff (PIN `999999`).
-pub fn seed_app_state_at(y: i32, m: u32, d: u32, h: u32, mi: u32, s: u32) -> EodRig {
+fn build_state(
+    y: i32,
+    m: u32,
+    d: u32,
+    h: u32,
+    mi: u32,
+    s: u32,
+    bouncer_url: String,
+) -> EodRig {
     let master = Arc::new(Mutex::new(Master::open_in_memory().unwrap()));
     let events = Arc::new(EventStore::open_in_memory().unwrap());
-    let kek = Arc::new(Kek::new_random());
     let mock_clock = Arc::new(MockClock::at_ymd_hms(y, m, d, h, mi, s));
     let clock: Arc<dyn Clock> = mock_clock.clone();
 
-    let key_manager = Arc::new(crate::services::key_manager::KeyManager::new(
-        master.clone(),
-        kek.clone(),
+    let bouncer = Arc::new(BouncerClient::new(bouncer_url));
+    let seed_cache = Arc::new(SeedCache::from_seeds(
+        "test",
+        vec![("test".into(), [42u8; 32])],
     ));
+    let key_manager = Arc::new(KeyManager::new(seed_cache.clone()));
+
     let event_service = EventService {
         events: events.clone(),
         key_manager: key_manager.clone(),
@@ -91,7 +147,6 @@ pub fn seed_app_state_at(y: i32, m: u32, d: u32, h: u32, mi: u32, s: u32) -> Eod
         broadcast_tx: broadcast_tx.clone(),
     };
 
-    // Seed an owner so tests can grab a token.
     let pin_hash = hash_pin("999999").unwrap();
     let owner_id = master
         .lock()
@@ -102,21 +157,20 @@ pub fn seed_app_state_at(y: i32, m: u32, d: u32, h: u32, mi: u32, s: u32) -> Eod
     let settings = Arc::new(Settings::load(&master.lock().unwrap()).unwrap());
 
     let tmp = tempfile::tempdir().unwrap();
-    let reports_dir = tmp.path().join("reports");
     let admin_dist = tmp.path().join("admin_dist");
 
     let state = Arc::new(AppState {
-        kek,
         master,
         events,
         key_manager,
+        seed_cache,
+        bouncer,
         clock,
         auth,
         commands,
         store,
         settings,
         broadcast_tx,
-        reports_dir,
         admin_dist,
     });
 
@@ -132,8 +186,26 @@ pub fn seed_app_state_at(y: i32, m: u32, d: u32, h: u32, mi: u32, s: u32) -> Eod
         state,
         clock: mock_clock,
         owner,
-        _tmp: tmp,
     }
+}
+
+/// Build an in-memory AppState wired against a shared in-process bouncer
+/// stub that accepts everything.
+pub fn seed_app_state_at(y: i32, m: u32, d: u32, h: u32, mi: u32, s: u32) -> EodRig {
+    build_state(y, m, d, h, mi, s, stub_bouncer_url())
+}
+
+/// Like `seed_app_state_at` but the bouncer URL points at an unreachable
+/// port. Use for negative-path tests around bouncer outages.
+pub fn seed_app_state_at_failing_bouncer(
+    y: i32,
+    m: u32,
+    d: u32,
+    h: u32,
+    mi: u32,
+    s: u32,
+) -> EodRig {
+    build_state(y, m, d, h, mi, s, "http://127.0.0.1:1".into())
 }
 
 fn room(id: i64) -> SpotRef {
@@ -156,8 +228,6 @@ fn item(product_id: i64, qty: i64, unit_price: i64) -> OrderItemSpec {
     }
 }
 
-/// Place a single bar-route order (1 unit @ 50k) on a fresh session.
-/// Runs the full command pipeline (ACL/idempotency/validation/encrypt/append).
 pub fn place_test_order(rig: &EodRig) -> (String, String) {
     let session_id = Uuid::new_v4().to_string();
     let order_id = Uuid::new_v4().to_string();
@@ -198,7 +268,6 @@ pub fn place_test_order(rig: &EodRig) -> (String, String) {
     (session_id, order_id)
 }
 
-/// Open + order + pay + close. Returns the session_id.
 pub fn take_test_payment(rig: &EodRig) -> String {
     let (session_id, _) = place_test_order(rig);
     let cs = &rig.state.commands;
@@ -239,27 +308,6 @@ pub fn take_test_payment(rig: &EodRig) -> String {
     session_id
 }
 
-/// `state.master` access for db assertions.
-pub fn day_key_exists(state: &AppState, day: &str) -> bool {
-    state
-        .master
-        .lock()
-        .unwrap()
-        .get_dek(day)
-        .unwrap()
-        .is_some()
-}
-
-pub fn daily_report_exists(state: &AppState, day: &str) -> bool {
-    state
-        .master
-        .lock()
-        .unwrap()
-        .get_daily_report(day)
-        .unwrap()
-        .is_some()
-}
-
 pub fn eod_runs_status(state: &AppState, day: &str) -> String {
     state
         .master
@@ -289,7 +337,6 @@ pub fn insert_idempotency(state: &AppState, key: &str, ts_ms: i64) {
         .unwrap();
 }
 
-/// UTC ms helper for tests that name times in business-day terms.
 pub fn ts_ms(y: i32, m: u32, d: u32, h: u32, mi: u32) -> i64 {
     use chrono::TimeZone;
     chrono::Utc

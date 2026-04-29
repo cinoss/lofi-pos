@@ -145,7 +145,7 @@ impl CommandService {
                     "order_id": order_id,
                     "items": items,
                 });
-                crate::print::print("order_ticket", &payload);
+                crate::print::enqueue(&self.master, "order_ticket", &payload, self.clock.now_ms());
             }
             DomainEvent::PaymentTaken {
                 session_id,
@@ -163,7 +163,7 @@ impl CommandService {
                     "total": total,
                     "method": method,
                 });
-                crate::print::print("receipt", &payload);
+                crate::print::enqueue(&self.master, "receipt", &payload, self.clock.now_ms());
             }
             DomainEvent::SessionClosed { closed_by, reason } => {
                 let payload = serde_json::json!({
@@ -171,7 +171,7 @@ impl CommandService {
                     "closed_by": closed_by,
                     "reason": reason,
                 });
-                crate::print::print("session_closed", &payload);
+                crate::print::enqueue(&self.master, "session_closed", &payload, self.clock.now_ms());
             }
             _ => {}
         }

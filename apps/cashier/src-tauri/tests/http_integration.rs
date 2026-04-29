@@ -4,7 +4,8 @@ use cashier_lib::acl::Role;
 use cashier_lib::app_state::{AppState, Settings};
 use cashier_lib::auth::pin::hash_pin;
 use cashier_lib::auth::AuthService;
-use cashier_lib::crypto::Kek;
+use cashier_lib::bouncer::client::BouncerClient;
+use cashier_lib::bouncer::seed_cache::SeedCache;
 use cashier_lib::http::server::build_router;
 use cashier_lib::services::command_service::CommandService;
 use cashier_lib::services::event_service::EventService;
@@ -33,7 +34,11 @@ struct Rig {
 async fn boot_rig() -> Rig {
     let master = Arc::new(Mutex::new(Master::open_in_memory().unwrap()));
     let events = Arc::new(EventStore::open_in_memory().unwrap());
-    let kek = Arc::new(Kek::new_random());
+    let seed_cache = Arc::new(SeedCache::from_seeds(
+        "test",
+        vec![("test".into(), [42u8; 32])],
+    ));
+    let bouncer = Arc::new(BouncerClient::new("http://127.0.0.1:1"));
     let mock_clock = Arc::new(MockClock::at_ymd_hms(2026, 4, 27, 12, 0, 0));
     let clock: Arc<dyn Clock> = mock_clock.clone();
     let tz = FixedOffset::east_opt(7 * 3600).unwrap();
@@ -54,8 +59,7 @@ async fn boot_rig() -> Rig {
     };
 
     let key_manager = Arc::new(cashier_lib::services::key_manager::KeyManager::new(
-        master.clone(),
-        kek.clone(),
+        seed_cache.clone(),
     ));
     let event_service = EventService {
         events: events.clone(),
@@ -90,17 +94,17 @@ async fn boot_rig() -> Rig {
 
     let tmp = tempfile::tempdir().unwrap();
     let app_state = Arc::new(AppState {
-        kek,
         master,
         events,
         key_manager,
+        seed_cache,
+        bouncer,
         clock,
         auth,
         commands,
         store,
         settings,
         broadcast_tx,
-        reports_dir: tmp.path().join("reports"),
         admin_dist: tmp.path().join("admin_dist"),
     });
     // Keep tmpdir alive for the spawned server's lifetime.
@@ -140,7 +144,7 @@ async fn login(rig: &Rig, pin: &str) -> String {
     v["token"].as_str().unwrap().to_string()
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn http_login_returns_token() {
     let rig = boot_rig().await;
     let resp = rig
@@ -158,7 +162,7 @@ async fn http_login_returns_token() {
     assert!(v.get("claims").is_some());
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn http_unauthenticated_request_returns_401() {
     let rig = boot_rig().await;
     let resp = rig
@@ -172,7 +176,7 @@ async fn http_unauthenticated_request_returns_401() {
     assert_eq!(v["code"], "unauthorized");
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn http_invalid_token_returns_401() {
     let rig = boot_rig().await;
     let resp = rig
@@ -185,7 +189,7 @@ async fn http_invalid_token_returns_401() {
     assert_eq!(resp.status(), 401);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn http_full_session_lifecycle() {
     let rig = boot_rig().await;
     let token = login(&rig, &rig.owner_pin).await;
@@ -245,7 +249,7 @@ async fn http_full_session_lifecycle() {
     assert_eq!(closed["status"], "Closed");
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn http_ws_receives_event_notice_on_write() {
     let rig = boot_rig().await;
     let token = login(&rig, &rig.owner_pin).await;
@@ -306,7 +310,7 @@ async fn http_ws_receives_event_notice_on_write() {
     let _ = ws.send(Message::Close(None)).await;
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn http_ws_unauthenticated_handshake_rejected() {
     let rig = boot_rig().await;
 
@@ -331,7 +335,7 @@ async fn http_ws_unauthenticated_handshake_rejected() {
     assert_eq!(v["code"], "unauthorized");
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn http_login_rate_limit_returns_429() {
     let rig = boot_rig().await;
     let url = format!("{}/auth/login", rig.base_url);
@@ -349,7 +353,7 @@ async fn http_login_rate_limit_returns_429() {
     assert_eq!(body["code"], "rate_limited");
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn http_logout_revokes_token() {
     let rig = boot_rig().await;
     let token = login(&rig, &rig.owner_pin).await;
@@ -386,7 +390,7 @@ async fn http_logout_revokes_token() {
     assert_eq!(again.status(), 401);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn http_override_required_returns_403_with_message() {
     let rig = boot_rig().await;
     let owner_token = login(&rig, &rig.owner_pin).await;

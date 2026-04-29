@@ -6,6 +6,7 @@
 
 use crate::error::{AppError, AppResult};
 use serde::Deserialize;
+use std::sync::OnceLock;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct SeedRow {
@@ -15,20 +16,32 @@ pub struct SeedRow {
     pub seed_hex: String,
 }
 
+/// Blocking HTTP client for the bouncer.
+///
+/// The internal `reqwest::blocking::Client` is built lazily on first use so
+/// that constructing a `BouncerClient` from inside an async context (e.g.
+/// `#[tokio::test]`) does not allocate a tokio runtime that would later fail
+/// to drop.
 pub struct BouncerClient {
     base: String,
-    http: reqwest::blocking::Client,
+    http: OnceLock<reqwest::blocking::Client>,
 }
 
 impl BouncerClient {
     pub fn new(base: impl Into<String>) -> Self {
         Self {
             base: base.into(),
-            http: reqwest::blocking::Client::builder()
+            http: OnceLock::new(),
+        }
+    }
+
+    fn http(&self) -> &reqwest::blocking::Client {
+        self.http.get_or_init(|| {
+            reqwest::blocking::Client::builder()
                 .timeout(std::time::Duration::from_secs(5))
                 .build()
-                .expect("build blocking http client"),
-        }
+                .expect("build blocking http client")
+        })
     }
 
     pub fn base(&self) -> &str {
@@ -37,7 +50,7 @@ impl BouncerClient {
 
     pub fn health(&self) -> AppResult<()> {
         let r = self
-            .http
+            .http()
             .get(format!("{}/health", self.base))
             .send()
             .map_err(|e| AppError::Internal(format!("bouncer health: {e}")))?;
@@ -52,7 +65,7 @@ impl BouncerClient {
 
     pub fn list_seeds(&self) -> AppResult<Vec<SeedRow>> {
         let r = self
-            .http
+            .http()
             .get(format!("{}/seeds", self.base))
             .send()
             .map_err(|e| AppError::Internal(format!("bouncer seeds: {e}")))?;
@@ -78,7 +91,7 @@ impl BouncerClient {
             "target_printer_id": target,
         });
         let r = self
-            .http
+            .http()
             .post(format!("{}/print", self.base))
             .json(&body)
             .send()
@@ -104,7 +117,7 @@ impl BouncerClient {
             "report": report,
         });
         let r = self
-            .http
+            .http()
             .post(format!("{}/reports/eod", self.base))
             .json(&body)
             .send()

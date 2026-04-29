@@ -1,5 +1,6 @@
 use crate::auth::AuthService;
-use crate::crypto::Kek;
+use crate::bouncer::client::BouncerClient;
+use crate::bouncer::seed_cache::SeedCache;
 use crate::error::{AppError, AppResult};
 use crate::services::command_service::CommandService;
 use crate::services::key_manager::KeyManager;
@@ -68,23 +69,24 @@ impl Settings {
 /// The `AggregateStore` is also held inside `commands`; the `store` field here
 /// is a convenience clone for read-only consumers (e.g., HTTP handlers in E1).
 pub struct AppState {
-    pub kek: Arc<Kek>,
     pub master: Arc<Mutex<Master>>,
     pub events: Arc<EventStore>,
-    /// UTC-day-keyed DEK lifecycle owner. Shared between `EventService` (which
-    /// fetches `current_dek` per write) and `rotation::scheduler` (which calls
-    /// `rotate` at every UTC midnight).
+    /// Per-business-day DEK derivation, backed by the bouncer-fetched
+    /// `SeedCache`. Shared with `EventService` for write/read paths.
     pub key_manager: Arc<KeyManager>,
+    /// In-RAM seed cache populated at startup from the bouncer (or fallback
+    /// only if the bouncer is unreachable). Exposed so handlers/UI can read
+    /// `degraded` for a banner.
+    pub seed_cache: Arc<SeedCache>,
+    /// HTTP client for the bouncer sidecar. Used by EOD (`post_report`) and
+    /// the print queue worker (`print`).
+    pub bouncer: Arc<BouncerClient>,
     pub clock: Arc<dyn Clock>,
     pub auth: AuthService,
     pub commands: CommandService,
     pub store: Arc<AggregateStore>,
     pub settings: Arc<Settings>,
     pub broadcast_tx: tokio::sync::broadcast::Sender<crate::http::broadcast::EventNotice>,
-    /// Directory where the EOD pipeline writes `<business_day>.json` report
-    /// files (in addition to the `daily_report` row in master.db). Created
-    /// on demand by the runner.
-    pub reports_dir: PathBuf,
     /// Filesystem path to the built `apps/admin` SPA. Served by axum at
     /// `/ui/admin/*`. May not exist (dev convenience): the static handler
     /// logs a warning and returns 404 in that case.

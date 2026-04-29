@@ -1,12 +1,6 @@
 //! Runtime in-memory aggregate state. Disk events.db is the durable log
 //! and crash-recovery source; this struct holds the live projection that
 //! commands read and mutate.
-//!
-//! Concurrency: `DashMap`'s shard locks let distinct aggregates proceed
-//! without contention. The `agg_lock` (`KeyMutex<String>`) in
-//! `CommandService::execute` serializes validate-then-apply for one
-//! aggregate id, preventing TOCTOU between reads and writes. Idempotency
-//! cache is mirrored to `master.idempotency_key` for restart durability.
 
 use crate::domain::order::OrderState;
 use crate::domain::payment::PaymentState;
@@ -38,74 +32,84 @@ impl Default for AggregateStore {
     }
 }
 
-use crate::business_day::business_day_of;
-use crate::crypto::{Dek, Kek};
 use crate::domain::apply::{apply, ApplyCtx};
 use crate::domain::event::DomainEvent;
-use crate::error::{AppError, AppResult};
-use crate::store::events::EventStore;
-use crate::store::master::Master;
-use crate::time::Clock;
-use chrono::FixedOffset;
+use crate::error::AppResult;
+use crate::services::key_manager::KeyManager;
+use crate::store::events::{EventRow, EventStore};
 use std::collections::HashMap;
+
+#[derive(Debug, Clone)]
+pub struct WarmUpReport {
+    pub aggregates_replayed: usize,
+    pub events_replayed: usize,
+    pub aggregates_dropped: Vec<(String, String)>,
+}
 
 impl AggregateStore {
     /// Restore in-memory state from durable storage.
     ///
-    /// 1. Unwrap every active business day's DEK so we can decrypt events.
-    /// 2. Replay live aggregates (those without a terminal event) into apply().
-    /// 3. Repopulate idempotency cache for the current business day.
-    ///
-    /// Costs O(events for live aggregates x decrypt). At POS scale this is
-    /// well under 100ms even for a busy night with cross-midnight sessions.
+    /// Hole-tolerant: if any event in an aggregate fails to decrypt, OR the
+    /// per-aggregate `agg_seq` column has a gap, the entire aggregate is
+    /// dropped (logged with reason). Surviving aggregates are replayed in
+    /// global (ts, id) order so cross-aggregate causality is preserved.
     pub fn warm_up(
         &self,
-        master: &Master,
         events: &EventStore,
-        kek: &Kek,
-        clock: &dyn Clock,
-        tz: FixedOffset,
-        cutoff_hour: u32,
-    ) -> AppResult<WarmUpStats> {
-        // Step 1: derive DEKs for every retained UTC day. After the UTC key
-        // rotation refactor, `event.key_id` stores `utc_day_of(ts)` (decoupled
-        // from `business_day`), and DEKs live in the `dek` table keyed by UTC
-        // day. Warm-up just needs every currently-held key.
-        let active_days: Vec<String> = master
-            .list_dek_days()?
-            .into_iter()
-            .map(|i| i.utc_day)
-            .collect();
-        let mut deks: HashMap<String, Dek> = HashMap::new();
-        for day in &active_days {
-            if let Some(wrapped) = master.get_dek(day)? {
-                deks.insert(day.clone(), kek.unwrap(&wrapped)?);
+        key_manager: &KeyManager,
+    ) -> AppResult<WarmUpReport> {
+        let rows = events.list_all()?;
+        let mut by_agg: HashMap<String, Vec<(EventRow, AppResult<DomainEvent>)>> = HashMap::new();
+        for row in rows {
+            let decrypted = decrypt_row(key_manager, &row);
+            by_agg
+                .entry(row.aggregate_id.clone())
+                .or_default()
+                .push((row, decrypted));
+        }
+
+        let mut to_apply: Vec<(EventRow, DomainEvent)> = Vec::new();
+        let mut aggregates_dropped: Vec<(String, String)> = Vec::new();
+        let mut aggregates_replayed = 0usize;
+
+        for (aggregate_id, mut events_for_agg) in by_agg {
+            events_for_agg.sort_by_key(|(row, _)| row.agg_seq);
+
+            let seq_ok = events_for_agg
+                .iter()
+                .enumerate()
+                .all(|(i, (row, _))| row.agg_seq == (i as i64) + 1);
+            let all_decrypted = events_for_agg.iter().all(|(_, r)| r.is_ok());
+
+            if !seq_ok || !all_decrypted {
+                let reason = if !seq_ok {
+                    "sequence gap".to_string()
+                } else {
+                    let first_err = events_for_agg
+                        .iter()
+                        .find_map(|(_, r)| r.as_ref().err())
+                        .map(|e| e.to_string())
+                        .unwrap_or_else(|| "decrypt failed".into());
+                    format!("decrypt failed: {first_err}")
+                };
+                tracing::warn!(
+                    aggregate_id = %aggregate_id,
+                    reason = %reason,
+                    "warm-up dropping aggregate"
+                );
+                aggregates_dropped.push((aggregate_id, reason));
+                continue;
+            }
+
+            aggregates_replayed += 1;
+            for (row, decrypted) in events_for_agg {
+                to_apply.push((row, decrypted.unwrap()));
             }
         }
 
-        // Step 2: replay live aggregates. Events for one aggregate can mutate
-        // a sibling aggregate (e.g., OrderPlaced pushes into the session's
-        // order_ids index). To preserve causal ordering, collect all rows
-        // across live aggregates and replay in global event-id (= insertion)
-        // order.
-        let live = events.list_live_aggregate_ids()?;
-        let mut all_rows = Vec::new();
-        for agg in &live {
-            all_rows.extend(events.list_for_aggregate(agg)?);
-        }
-        all_rows.sort_by_key(|r| r.id);
-        let mut events_replayed = 0usize;
-        for row in &all_rows {
-            let dek = deks.get(&row.key_id).ok_or_else(|| {
-                AppError::Internal(format!("warm_up: missing DEK for key_id {}", row.key_id))
-            })?;
-            let aad = format!(
-                "{}|{}|{}|{}",
-                row.business_day, row.event_type, row.aggregate_id, row.key_id
-            );
-            let pt = dek.decrypt(&row.payload_enc, aad.as_bytes())?;
-            let ev: DomainEvent = serde_json::from_slice(&pt)
-                .map_err(|e| AppError::Internal(format!("warm_up deserialize: {e}")))?;
+        to_apply.sort_by_key(|(row, _)| (row.ts, row.id));
+        let events_replayed = to_apply.len();
+        for (row, ev) in to_apply {
             apply(
                 self,
                 &ev,
@@ -113,30 +117,141 @@ impl AggregateStore {
                     aggregate_id: &row.aggregate_id,
                 },
             )?;
-            events_replayed += 1;
         }
 
-        // Step 3: repopulate idempotency cache (current business day).
-        let today = business_day_of(clock.now(), tz, cutoff_hour);
-        let idem_rows = master.list_idempotency_for_day(&today)?;
-        let idem_count = idem_rows.len();
-        for (key, json) in idem_rows {
-            self.idem.insert(key, json);
-        }
-
-        Ok(WarmUpStats {
-            aggregates_replayed: live.len(),
+        Ok(WarmUpReport {
+            aggregates_replayed,
             events_replayed,
-            idem_rows_loaded: idem_count,
-            active_days: active_days.len(),
+            aggregates_dropped,
         })
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct WarmUpStats {
-    pub aggregates_replayed: usize,
-    pub events_replayed: usize,
-    pub idem_rows_loaded: usize,
-    pub active_days: usize,
+fn decrypt_row(km: &KeyManager, row: &EventRow) -> AppResult<DomainEvent> {
+    let dek = km.dek_for(&row.seed_id, &row.business_day)?;
+    let aad = format!(
+        "{}|{}|{}|{}",
+        row.business_day, row.event_type, row.aggregate_id, row.seed_id
+    );
+    let pt = dek.decrypt(&row.payload_enc, aad.as_bytes())?;
+    let ev: DomainEvent = serde_json::from_slice(&pt)
+        .map_err(|e| crate::error::AppError::Internal(format!("warm_up deserialize: {e}")))?;
+    Ok(ev)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::bouncer::seed_cache::SeedCache;
+    use crate::services::event_service::{EventService, WriteCtx};
+    use crate::time::test_support::MockClock;
+    use crate::time::Clock;
+    use chrono::FixedOffset;
+    use std::sync::Arc;
+
+    fn cache() -> Arc<SeedCache> {
+        Arc::new(SeedCache::from_seeds(
+            "test",
+            vec![("test".into(), [7u8; 32])],
+        ))
+    }
+
+    fn rig() -> (Arc<EventStore>, Arc<KeyManager>, EventService) {
+        let events = Arc::new(EventStore::open_in_memory().unwrap());
+        let km = Arc::new(KeyManager::new(cache()));
+        let clock: Arc<dyn Clock> = Arc::new(MockClock::at_ymd_hms(2026, 4, 27, 12, 0, 0));
+        let svc = EventService {
+            events: events.clone(),
+            key_manager: km.clone(),
+            clock,
+            cutoff_hour: 11,
+            tz: FixedOffset::east_opt(7 * 3600).unwrap(),
+        };
+        (events, km, svc)
+    }
+
+    fn open(svc: &EventService, sid: &str) {
+        let ev = DomainEvent::SessionOpened {
+            spot: crate::domain::spot::SpotRef::Room {
+                id: 1,
+                name: "R1".into(),
+                hourly_rate: 50_000,
+            },
+            opened_by: 1,
+            customer_label: None,
+            team: None,
+        };
+        svc.write(
+            WriteCtx {
+                aggregate_id: sid,
+                actor_staff: Some(1),
+                actor_name: None,
+                override_staff_id: None,
+                override_staff_name: None,
+                at: None,
+            },
+            &ev,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn warm_up_applies_clean_aggregates_normally() {
+        let (events, km, svc) = rig();
+        open(&svc, "a");
+        open(&svc, "b");
+        let store = AggregateStore::new();
+        let report = store.warm_up(&events, &km).unwrap();
+        assert_eq!(report.events_replayed, 2);
+        assert!(report.aggregates_dropped.is_empty());
+        assert_eq!(report.aggregates_replayed, 2);
+    }
+
+    #[test]
+    fn warm_up_drops_aggregate_with_seq_gap() {
+        let (events, km, svc) = rig();
+        open(&svc, "a"); // clean aggregate, agg_seq=1
+        // Aggregate "g": insert two events, then delete the first row so the
+        // remaining row has agg_seq=2 with no agg_seq=1 — a hole.
+        open(&svc, "g");
+        open(&svc, "g");
+        let rows_g = events.list_for_aggregate("g").unwrap();
+        assert_eq!(rows_g.len(), 2);
+        events.delete_by_id(rows_g[0].id).unwrap();
+
+        let store = AggregateStore::new();
+        let report = store.warm_up(&events, &km).unwrap();
+        let dropped_ids: Vec<&String> =
+            report.aggregates_dropped.iter().map(|(a, _)| a).collect();
+        assert!(
+            dropped_ids.contains(&&"g".to_string()),
+            "g should be dropped: {report:?}"
+        );
+        assert!(!dropped_ids.contains(&&"a".to_string()));
+    }
+
+    #[test]
+    fn warm_up_drops_aggregate_with_undecryptable_event() {
+        let (events, _km_real, svc) = rig();
+        open(&svc, "a");
+        // A KeyManager with a different seed cannot decrypt rows tagged
+        // seed_id="test" — the seed id is unknown -> Crypto error.
+        let other_cache = Arc::new(SeedCache::from_seeds(
+            "other",
+            vec![("other".into(), [99u8; 32])],
+        ));
+        let km_bad = Arc::new(KeyManager::new(other_cache));
+        let store = AggregateStore::new();
+        let report = store.warm_up(&events, &km_bad).unwrap();
+        let dropped_ids: Vec<&String> =
+            report.aggregates_dropped.iter().map(|(a, _)| a).collect();
+        assert!(dropped_ids.contains(&&"a".to_string()));
+        let reason = &report
+            .aggregates_dropped
+            .iter()
+            .find(|(a, _)| a == "a")
+            .unwrap()
+            .1;
+        assert!(reason.contains("decrypt"), "got reason: {reason}");
+    }
 }

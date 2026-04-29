@@ -1,6 +1,6 @@
 mod common;
 
-use cashier_lib::crypto::Kek;
+use cashier_lib::bouncer::seed_cache::SeedCache;
 use cashier_lib::domain::event::DomainEvent;
 use cashier_lib::domain::{order, payment, session};
 use cashier_lib::services::event_service::{EventService, WriteCtx};
@@ -13,14 +13,11 @@ use std::sync::{Arc, Mutex};
 
 #[test]
 fn full_session_lifecycle_replays_to_expected_state() {
-    let master = Arc::new(Mutex::new(Master::open_in_memory().unwrap()));
+    let _master = Arc::new(Mutex::new(Master::open_in_memory().unwrap()));
     let events = Arc::new(EventStore::open_in_memory().unwrap());
-    let kek = Arc::new(Kek::new_random());
+    let seed_cache = Arc::new(SeedCache::from_seeds("test", vec![("test".into(), [42u8; 32])]));
     let clock = Arc::new(MockClock::at_ymd_hms(2026, 4, 27, 14, 0, 0));
-    let key_manager = Arc::new(cashier_lib::services::key_manager::KeyManager::new(
-        master.clone(),
-        kek.clone(),
-    ));
+    let key_manager = Arc::new(cashier_lib::services::key_manager::KeyManager::new(seed_cache.clone()));
     let writer = EventService {
         events: events.clone(),
         key_manager,
@@ -177,18 +174,21 @@ fn full_session_lifecycle_replays_to_expected_state() {
 }
 
 #[test]
-fn shred_day_renders_payloads_unreadable() {
-    let master = Arc::new(Mutex::new(Master::open_in_memory().unwrap()));
+fn seed_eviction_renders_payloads_unreadable() {
+    // Crypto-shred under the bouncer model = the seed used to encrypt the
+    // event no longer appears in the cashier's seed cache. With a fresh
+    // KeyManager that lacks the original seed, decrypt fails.
     let events = Arc::new(EventStore::open_in_memory().unwrap());
-    let kek = Arc::new(Kek::new_random());
-    let clock = Arc::new(MockClock::at_ymd_hms(2026, 4, 27, 14, 0, 0));
-    let key_manager = Arc::new(cashier_lib::services::key_manager::KeyManager::new(
-        master.clone(),
-        kek.clone(),
+    let original_cache = Arc::new(SeedCache::from_seeds(
+        "writer",
+        vec![("writer".into(), [42u8; 32])],
     ));
+    let clock = Arc::new(MockClock::at_ymd_hms(2026, 4, 27, 14, 0, 0));
     let writer = EventService {
         events: events.clone(),
-        key_manager,
+        key_manager: Arc::new(cashier_lib::services::key_manager::KeyManager::new(
+            original_cache,
+        )),
         clock: clock.clone(),
         cutoff_hour: 11,
         tz: FixedOffset::east_opt(7 * 3600).unwrap(),
@@ -212,16 +212,25 @@ fn shred_day_renders_payloads_unreadable() {
         .unwrap();
 
     let row = events.list_for_day("2026-04-27").unwrap().remove(0);
-    // Decrypt works pre-shred
     assert!(writer.read_decrypted(&row).is_ok());
 
-    // Shred the wrapped DEK
-    assert!(master.lock().unwrap().delete_dek("2026-04-27").unwrap());
+    // Simulate bouncer crypto-shred: build a new KeyManager backed by a
+    // cache that does NOT contain the "writer" seed.
+    let stripped_cache = Arc::new(SeedCache::from_seeds(
+        "other",
+        vec![("other".into(), [99u8; 32])],
+    ));
+    let stripped = EventService {
+        events: events.clone(),
+        key_manager: Arc::new(cashier_lib::services::key_manager::KeyManager::new(
+            stripped_cache,
+        )),
+        clock,
+        cutoff_hour: 11,
+        tz: FixedOffset::east_opt(7 * 3600).unwrap(),
+    };
 
-    // Defense-in-depth: shred = key delete, NOT row delete. The row stays
-    // in events.db (audit trail intact); only its decryption is lost.
+    // Row is still on disk (audit-trail intact), but decrypt fails.
     assert_eq!(events.list_for_day("2026-04-27").unwrap().len(), 1);
-
-    // Decrypt now fails — no DEK to unwrap
-    assert!(writer.read_decrypted(&row).is_err());
+    assert!(stripped.read_decrypted(&row).is_err());
 }

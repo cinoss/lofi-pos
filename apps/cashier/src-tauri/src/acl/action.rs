@@ -26,8 +26,6 @@ pub enum Action {
     GetSession,
     // reports
     ViewLiveReports,
-    /// Plan F: list/get historical `daily_report` rows. Manager-and-up.
-    ViewReports,
     RunEod,
     // admin
     EditMenu,
@@ -36,6 +34,4 @@ pub enum Action {
     EditSettings,
     /// Plan F: spot CRUD (rooms + tables) — Owner-only.
     SpotEdit,
-    /// UTC key rotation: GET /admin/keys (list current DEK retention) — Owner-only.
-    ViewKeys,
 }

@@ -3,7 +3,7 @@ mod common;
 use cashier_lib::acl::{policy::PolicyCtx, Action, Role};
 use cashier_lib::auth::pin::hash_pin;
 use cashier_lib::auth::AuthService;
-use cashier_lib::crypto::Kek;
+use cashier_lib::bouncer::seed_cache::SeedCache;
 use cashier_lib::domain::event::DomainEvent;
 use cashier_lib::error::AppError;
 use cashier_lib::services::command_service::CommandService;
@@ -22,13 +22,10 @@ use uuid::Uuid;
 fn rig() -> (CommandService, AuthService, Arc<EventStore>) {
     let master = Arc::new(Mutex::new(Master::open_in_memory().unwrap()));
     let events = Arc::new(EventStore::open_in_memory().unwrap());
-    let kek = Arc::new(Kek::new_random());
+    let seed_cache = Arc::new(SeedCache::from_seeds("test", vec![("test".into(), [42u8; 32])]));
     let mock_clock = Arc::new(MockClock::at_ymd_hms(2026, 4, 27, 12, 0, 0));
     let clock: Arc<dyn Clock> = mock_clock.clone();
-    let key_manager = Arc::new(cashier_lib::services::key_manager::KeyManager::new(
-        master.clone(),
-        kek.clone(),
-    ));
+    let key_manager = Arc::new(cashier_lib::services::key_manager::KeyManager::new(seed_cache.clone()));
     let event_service = EventService {
         events: events.clone(),
         key_manager,

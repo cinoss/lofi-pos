@@ -4,6 +4,8 @@
 use crate::app_state::{AppState, Settings};
 use crate::auth::AuthService;
 use crate::bootstrap;
+use crate::bouncer::client::BouncerClient;
+use crate::bouncer::seed_cache::SeedCache;
 use crate::eod::{business_day::business_day_for, business_day::Cfg, runner::run_eod};
 use crate::keychain;
 use crate::services::command_service::CommandService;
@@ -20,9 +22,6 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 /// Run the EOD pipeline for `day` (or yesterday if `day` is None).
-/// Pure stand-alone path: opens master.db and events.db at the conventional
-/// platform paths, builds a minimal AppState shell, invokes `run_eod`, and
-/// returns. No tokio runtime needed beyond the function body.
 pub fn run_eod_now(day: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
     let identifier = "com.lofi-pos.cashier";
     let data_dir: PathBuf = if cfg!(target_os = "macos") {
@@ -45,10 +44,24 @@ pub fn run_eod_now(day: Option<String>) -> Result<(), Box<dyn std::error::Error>
     }
 
     let ks = keychain::OsKeyStore::new(keychain::SERVICE);
-    let kek = Arc::new(bootstrap::load_or_init_kek(&ks)?);
     let master = Arc::new(Mutex::new(Master::open(&master_path)?));
     let events = Arc::new(EventStore::open(&events_path)?);
     let clock: Arc<dyn Clock> = Arc::new(SystemClock);
+
+    // Bouncer init — eod-now is also degraded-tolerant: a stuck bouncer
+    // shouldn't block the operator from reading the day's accumulated state.
+    // (The actual POST /reports/eod call inside run_eod will surface the
+    // failure.)
+    let bouncer_url =
+        std::env::var("LOFI_BOUNCER_URL").unwrap_or_else(|_| "http://127.0.0.1:7879".into());
+    let bouncer = Arc::new(BouncerClient::new(bouncer_url));
+    let seed_cache = Arc::new(SeedCache::fetch_or_fallback(&bouncer));
+    if seed_cache.degraded {
+        eprintln!(
+            "warning: bouncer unreachable; eod-now running in DEGRADED mode using fallback seed"
+        );
+    }
+    let key_manager = Arc::new(KeyManager::new(seed_cache.clone()));
 
     let settings = Arc::new(Settings::load(&master.lock().unwrap())?);
     let cfg = Cfg {
@@ -58,12 +71,10 @@ pub fn run_eod_now(day: Option<String>) -> Result<(), Box<dyn std::error::Error>
 
     let day = day.unwrap_or_else(|| {
         let today_ms = clock.now_ms();
-        // Yesterday's business day.
         let yesterday_ms = today_ms - Duration::days(1).num_milliseconds();
         business_day_for(yesterday_ms, cfg)
     });
 
-    let key_manager = Arc::new(KeyManager::new(master.clone(), kek.clone()));
     let event_service = EventService {
         events: events.clone(),
         key_manager: key_manager.clone(),
@@ -91,21 +102,24 @@ pub fn run_eod_now(day: Option<String>) -> Result<(), Box<dyn std::error::Error>
         broadcast_tx: broadcast_tx.clone(),
     };
     let app_state = AppState {
-        kek,
         master,
         events,
         key_manager,
+        seed_cache,
+        bouncer,
         clock,
         auth,
         commands,
         store,
         settings,
         broadcast_tx,
-        reports_dir: data_dir.join("reports"),
         admin_dist: data_dir.join("admin").join("dist"),
     };
 
     let r = run_eod(&app_state, &day)?;
-    println!("eod-now: business_day={} status={}", r.business_day, r.status);
+    println!(
+        "eod-now: business_day={} status={}",
+        r.business_day, r.status
+    );
     Ok(())
 }

@@ -35,10 +35,9 @@ fn expected_tables_exist_after_migration() {
         "product",
         "recipe",
         "setting",
-        "dek",
-        "daily_report",
         "idempotency_key",
         "token_denylist",
+        "print_queue",
         "_migrations",
     ];
     for t in tables {
