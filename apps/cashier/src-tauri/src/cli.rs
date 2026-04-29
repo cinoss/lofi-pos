@@ -48,19 +48,20 @@ pub fn run_eod_now(day: Option<String>) -> Result<(), Box<dyn std::error::Error>
     let events = Arc::new(EventStore::open(&events_path)?);
     let clock: Arc<dyn Clock> = Arc::new(SystemClock);
 
-    // Bouncer init — eod-now is also degraded-tolerant: a stuck bouncer
-    // shouldn't block the operator from reading the day's accumulated state.
-    // (The actual POST /reports/eod call inside run_eod will surface the
-    // failure.)
+    // Bouncer init — hard-fails if bouncer is unreachable. The bouncer owns
+    // its own internal fallback; whatever it returns is what we use.
     let bouncer_url =
         std::env::var("LOFI_BOUNCER_URL").unwrap_or_else(|_| "http://127.0.0.1:7879".into());
     let bouncer = Arc::new(BouncerClient::new(bouncer_url));
-    let seed_cache = Arc::new(SeedCache::fetch_or_fallback(&bouncer));
-    if seed_cache.degraded {
-        eprintln!(
-            "warning: bouncer unreachable; eod-now running in DEGRADED mode using fallback seed"
-        );
-    }
+    let seed_cache = match SeedCache::fetch(&bouncer) {
+        Ok(c) => Arc::new(c),
+        Err(e) => {
+            return Err(format!(
+                "bouncer not reachable; start bouncer service first ({e})"
+            )
+            .into());
+        }
+    };
     let key_manager = Arc::new(KeyManager::new(seed_cache.clone()));
 
     let settings = Arc::new(Settings::load(&master.lock().unwrap())?);

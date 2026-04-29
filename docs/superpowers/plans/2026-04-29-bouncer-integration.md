@@ -1,5 +1,7 @@
 # Bouncer Integration — Implementation Plan
 
+> **Updated post-merge (2026-04-28):** the cashier-side fallback seed and "degraded mode" described below have been removed. The bouncer (separate team) handles its own internal fallback so it always returns at least one seed when reachable; the cashier is ignorant of fallback semantics and hard-fails at startup if the bouncer is unreachable. See branch `drop-cashier-fallback` and the updated spec for the current model. The `SeedCache::fetch_or_fallback` / `degraded` / `FALLBACK_SEED_ID` references in this plan are superseded by `SeedCache::fetch -> AppResult<Self>`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Move key custody, printer routing, and report delivery out of the cashier into a separate localhost HTTP service called `bouncer`. Build a mock bouncer in this repo so cashier development remains end-to-end testable. Drop the local key/report storage that the bouncer replaces.

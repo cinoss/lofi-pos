@@ -96,16 +96,17 @@ Cashier hits this once at startup. Failure → cashier refuses to start (hard-fa
 ### Bootstrap
 
 1. App starts. Reads `LOFI_BOUNCER_URL` (default `http://127.0.0.1:7879`).
-2. Calls `GET /health`. If reachable, calls `GET /seeds` and caches the full list in RAM, including which one is `default=true`.
-3. **Fallback always present.** The cashier ships with a hard-coded fallback seed (id `"fallback"`, deterministic constant bytes). The fallback is added to the cache regardless of bouncer state.
-4. **Encrypt-seed selection rule:**
-   - If bouncer fetch succeeded → use bouncer's `default=true` seed.
-   - If bouncer fetch failed (non-200, network error, timeout) → use the fallback seed. Cashier logs a degraded-mode warning at startup and on every minute thereafter; UI shows a banner.
-5. Proceeds to normal startup (axum, scheduler, etc.). Cashier stays in whichever mode it bootstrapped in for the entire process lifetime — to recover from degraded mode, **restart**.
+2. Calls `GET /health` (best-effort log only) then `GET /seeds`. Caches the full returned list in RAM, including which one is `default=true`.
+3. **Cashier owns no fallback.** The bouncer (separate service) handles its own internal fallback and is contractually expected to always return at least one seed (with one marked `default=true`) when reachable. Whatever the bouncer returns is what the cashier uses; from the cashier's perspective there is no special "fallback seed" — every `seed_id` is opaque.
+4. **Hard-fail at startup** if any of the following occurs:
+   - bouncer unreachable (network error, timeout, non-200), OR
+   - bouncer returns an empty seed list, OR
+   - bouncer returns no seed marked `default=true`.
 
-Seed cache is **never refreshed** during the process lifetime. To pick up a rotated default seed (or to exit degraded mode), restart the cashier.
+   In any of these cases the cashier exits with a non-zero status and an operator-friendly message (`bouncer not reachable; start bouncer service first`). There is no "degraded mode."
+5. On success, proceeds to normal startup (axum, scheduler, etc.).
 
-**Consequence in degraded mode:** new events encrypt under fallback seed; old events tagged with bouncer-only seed_ids become undecryptable until the cashier next boots with bouncer reachable. Warm-up handles this gracefully (see "Hole-tolerant warm-up" below).
+Seed cache is **never refreshed** during the process lifetime. To pick up a rotated default seed, restart the cashier.
 
 ### Key derivation
 
@@ -132,8 +133,8 @@ Note: `event.key_id` column is renamed to `seed_id` (semantic change; the day pa
 
 ```
 seed       = cache.get(row.seed_id)
-            // not found → AppError::Crypto("seed expired") (sidecar removed it,
-            // or cashier in degraded mode without that seed)
+            // not found → AppError::Crypto("seed expired") (bouncer rotated
+            // it out between the original write and this read)
 dek        = blake3(seed.bytes, row.business_day.as_bytes())
 aad        = format!("{}|{}|{}|{}", row.business_day, row.event_type, row.aggregate_id, row.seed_id)
 plaintext  = aes_gcm.decrypt(dek, row.payload_enc, aad)
@@ -155,7 +156,6 @@ Warm-up algorithm:
 Effect: a session whose first OrderPlaced was encrypted under a seed_id we no longer have is dropped entirely — no half-applied state. Reports for the day still capture what was successfully applied.
 
 Holes happen when:
-- Cashier ran in degraded mode at some point (events tagged with fallback seed mixed with bouncer-seed events for the same session)
 - Bouncer rotated out a seed that was used mid-session
 - Pre-prod fiddling: someone deleted event rows manually
 

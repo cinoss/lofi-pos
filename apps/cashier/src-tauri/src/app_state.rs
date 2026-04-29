@@ -76,9 +76,9 @@ pub struct AppState {
     /// Per-business-day DEK derivation, backed by the bouncer-fetched
     /// `SeedCache`. Shared with `EventService` for write/read paths.
     pub key_manager: Arc<KeyManager>,
-    /// In-RAM seed cache populated at startup from the bouncer (or fallback
-    /// only if the bouncer is unreachable). Exposed so handlers/UI can read
-    /// `degraded` for a banner.
+    /// In-RAM seed cache populated at startup from the bouncer. Cashier
+    /// startup hard-fails if the bouncer is unreachable, so this is always
+    /// populated with whatever seeds the bouncer returned.
     pub seed_cache: Arc<SeedCache>,
     /// HTTP client for the bouncer sidecar. Used by EOD (`post_report`) and
     /// the print queue worker (`print`).

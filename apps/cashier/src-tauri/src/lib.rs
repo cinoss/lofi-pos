@@ -41,22 +41,25 @@ pub fn run() {
 
             let clock: Arc<dyn time::Clock> = Arc::new(time::SystemClock);
 
-            // Bouncer init — degraded-tolerant. Cashier ships with a hard-coded
-            // fallback seed so startup never fails on bouncer outage.
+            // Bouncer init — cashier hard-fails if bouncer is unreachable or
+            // returns no usable seeds. The bouncer (separate service) owns its
+            // own internal fallback; whatever it returns is what we use.
             let bouncer_url = std::env::var("LOFI_BOUNCER_URL")
                 .unwrap_or_else(|_| "http://127.0.0.1:7879".into());
             let bouncer = Arc::new(bouncer::client::BouncerClient::new(bouncer_url));
             if let Err(e) = bouncer.health_blocking() {
                 tracing::warn!(error = %e, "bouncer health probe failed; will attempt seed fetch anyway");
             }
-            let seed_cache = Arc::new(bouncer::seed_cache::SeedCache::fetch_or_fallback(&bouncer));
-            if seed_cache.degraded {
-                tracing::warn!(
-                    "cashier started in DEGRADED mode (bouncer unreachable / no default seed). \
-                     New events use fallback seed; events tagged with bouncer-only seeds will not \
-                     decrypt this session. Restart with bouncer reachable to recover."
-                );
-            }
+            let seed_cache = match bouncer::seed_cache::SeedCache::fetch(&bouncer) {
+                Ok(c) => Arc::new(c),
+                Err(e) => {
+                    eprintln!(
+                        "fatal: bouncer not reachable; start bouncer service first ({e})"
+                    );
+                    tracing::error!(error = %e, "bouncer not reachable; aborting startup");
+                    std::process::exit(1);
+                }
+            };
 
             // Load TZ + cutoff from settings
             let (cutoff_hour, tz) = load_business_day_settings(&master.lock().unwrap())?;
