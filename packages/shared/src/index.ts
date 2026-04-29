@@ -8,5 +8,6 @@ export * from "./schemas/catalog";
 export * from "./schemas/settings";
 export * from "./schemas/admin";
 export * from "./schemas/report";
+export * from "./schemas/bouncer";
 export * from "./client";
 export * from "./ws";

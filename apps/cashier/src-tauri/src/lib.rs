@@ -2,6 +2,7 @@ pub mod acl;
 pub mod app_state;
 pub mod auth;
 pub mod bootstrap;
+pub mod bouncer;
 pub mod business_day;
 pub mod cli;
 pub mod crypto;
