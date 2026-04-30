@@ -20,6 +20,7 @@ import type {
 import { Button } from "@lofi-pos/ui/components/button";
 import { useApiClient } from "../api-context";
 import { OverrideModal } from "../components/override-modal";
+import { RoomClock } from "../components/room-clock";
 
 /** UI-side identity for a specific order line, used to drive cancel/return modals. */
 interface ItemRef {
@@ -236,6 +237,13 @@ export function SessionDetailRoute() {
         <div className="text-sm text-gray-500 mb-4">
           {session.spot.kind} · {session.order_ids.length} orders
         </div>
+
+        {session.spot.kind === "room" && session.status === "Open" && (
+          <RoomClock
+            openedAtMs={session.opened_at_ms}
+            hourlyRate={session.spot.hourly_rate}
+          />
+        )}
 
         <div className="rounded-lg border bg-white p-4 mb-4">
           <h2 className="font-semibold mb-2">Order list</h2>

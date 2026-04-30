@@ -7,6 +7,7 @@ import { SessionState, OrderState, ApiError } from "@lofi-pos/shared";
 import type { TakePaymentInput } from "@lofi-pos/shared";
 import { Button } from "@lofi-pos/ui/components/button";
 import { OverrideModal } from "../components/override-modal";
+import { computeRoomCharge } from "../components/room-clock";
 import { useApiClient } from "../api-context";
 
 export function PaymentRoute() {
@@ -43,13 +44,30 @@ export function PaymentRoute() {
     );
   }, 0);
 
+  // For time-billed (room) sessions, compute the projected room-time charge
+  // once at payment-screen load. Time charge is informational here — it gets
+  // folded into the subtotal prefill so the cashier sees the correct number,
+  // but it is not yet emitted as a separate line item (deferred until a
+  // dedicated `product.kind='time'` integration). Recomputing on every render
+  // would make the field unstable, so we capture it once.
+  const roomCharge =
+    session?.spot.kind === "room" && session.opened_at_ms
+      ? computeRoomCharge(
+          session.opened_at_ms,
+          Date.now(),
+          session.spot.hourly_rate,
+        )
+      : 0;
+
   const [subtotal, setSubtotal] = useState(0);
   // Default subtotal once the live computed value lands. Don't overwrite if
   // the cashier has already typed a value.
   useEffect(() => {
-    if (subtotal === 0 && computedSubtotal > 0) setSubtotal(computedSubtotal);
+    if (subtotal === 0 && (computedSubtotal > 0 || roomCharge > 0)) {
+      setSubtotal(computedSubtotal + roomCharge);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [computedSubtotal]);
+  }, [computedSubtotal, roomCharge]);
 
   const [discountPct, setDiscountPct] = useState(0);
   const [vatPct, setVatPct] = useState(8);
@@ -108,6 +126,12 @@ export function PaymentRoute() {
           value={subtotal}
           onChange={setSubtotal}
         />
+        {roomCharge > 0 && (
+          <div className="text-sm text-gray-600 -mt-2">
+            <Trans>Includes room time charge:</Trans>{" "}
+            {roomCharge.toLocaleString("vi-VN")}đ
+          </div>
+        )}
         <Field
           label={t`Discount %`}
           value={discountPct}
