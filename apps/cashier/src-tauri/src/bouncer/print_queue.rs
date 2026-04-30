@@ -14,7 +14,8 @@ use std::time::Duration;
 /// runs forever; the caller is expected to hold the JoinHandle implicitly
 /// via `tokio::spawn`.
 pub fn spawn(state: Arc<AppState>) {
-    tokio::spawn(async move {
+    // Tauri setup runs sync; use tauri::async_runtime so this works from there.
+    tauri::async_runtime::spawn(async move {
         loop {
             let next = {
                 let m = state.master.lock().unwrap();

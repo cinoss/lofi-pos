@@ -26,7 +26,10 @@ const CATCH_UP_MAX_DAYS: usize = 90;
 
 /// Spawn the EOD scheduler on the current Tokio runtime.
 pub fn spawn(state: Arc<AppState>) {
-    tokio::spawn(async move {
+    // Use Tauri's async_runtime so this is callable from the Tauri setup hook
+    // (which runs sync, before the main tokio runtime is hot). Internally
+    // tauri::async_runtime is tokio.
+    tauri::async_runtime::spawn(async move {
         // `run_eod` and `catch_up` are synchronous and end up calling the
         // blocking reqwest bouncer client; offload them to the blocking
         // pool so we don't panic the runtime by invoking blocking reqwest
