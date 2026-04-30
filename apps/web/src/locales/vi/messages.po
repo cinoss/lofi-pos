@@ -32,6 +32,12 @@ msgstr ""
 msgid "Bank transfer"
 msgstr ""
 
+#: ../../packages/pos-ui/src/components/transfer-modal.tsx
+#: ../../packages/pos-ui/src/routes/session-detail.tsx
+#: ../../packages/pos-ui/src/routes/session-detail.tsx
+msgid "Cancel"
+msgstr "Hủy"
+
 #: ../../packages/pos-ui/src/routes/payment.tsx
 msgid "Card"
 msgstr ""
@@ -61,6 +67,11 @@ msgstr ""
 msgid "Error: {0}"
 msgstr ""
 
+#: ../../packages/pos-ui/src/routes/payment.tsx
+msgid "Includes room time charge:"
+msgstr "Đã bao gồm tiền phòng:"
+
+#: ../../packages/pos-ui/src/routes/session-detail.tsx
 #: ../../packages/pos-ui/src/routes/sessions.tsx
 #: ../../packages/pos-ui/src/routes/spot-picker.tsx
 msgid "Loading…"
@@ -78,9 +89,21 @@ msgstr ""
 msgid "Logout"
 msgstr ""
 
+#: ../../packages/pos-ui/src/routes/session-detail.tsx
+msgid "Max: {max}"
+msgstr "Tối đa: {max}"
+
 #: ../../packages/pos-ui/src/routes/payment.tsx
 msgid "Method"
 msgstr ""
+
+#: ../../packages/pos-ui/src/components/transfer-modal.tsx
+msgid "Move to spot"
+msgstr "Chuyển sang bàn / phòng"
+
+#: ../../packages/pos-ui/src/routes/session-detail.tsx
+msgid "Move…"
+msgstr "Chuyển..."
 
 #: ../../packages/pos-ui/src/routes/login.tsx
 msgid "Network error"
@@ -89,6 +112,10 @@ msgstr ""
 #: ../../packages/pos-ui/src/routes/sessions.tsx
 msgid "No active sessions."
 msgstr ""
+
+#: ../../packages/pos-ui/src/components/transfer-modal.tsx
+msgid "No idle spots available."
+msgstr "Không có bàn / phòng trống."
 
 #: ../../packages/pos-ui/src/routes/spot-picker.tsx
 msgid "No idle spots."
@@ -106,13 +133,29 @@ msgstr ""
 msgid "Open new session →"
 msgstr ""
 
+#: ../../packages/pos-ui/src/routes/session-detail.tsx
+msgid "Return"
+msgstr "Trả hàng"
+
+#: ../../packages/pos-ui/src/routes/session-detail.tsx
+msgid "Return how many?"
+msgstr "Trả lại bao nhiêu?"
+
 #: ../../packages/pos-ui/src/routes/sessions.tsx
 msgid "Room"
 msgstr ""
 
+#: ../../packages/pos-ui/src/components/room-clock.tsx
+msgid "Room time"
+msgstr "Thời gian phòng"
+
 #: ../../packages/pos-ui/src/components/app-shell.tsx
 msgid "Sessions"
 msgstr ""
+
+#: ../../packages/pos-ui/src/routes/session-detail.tsx
+msgid "Submit"
+msgstr "Gửi"
 
 #: ../../packages/pos-ui/src/routes/payment.tsx
 msgid "Subtotal (VND)"
