@@ -86,6 +86,11 @@ fn full_command_lifecycle() {
         .unwrap();
     assert!(opened.0.spot.is_room());
     assert_eq!(opened.0.spot.id(), 1);
+    assert!(
+        opened.0.opened_at_ms > 0,
+        "opened_at_ms should be stamped from the wall-clock at write time, got {}",
+        opened.0.opened_at_ms
+    );
 
     // Place order
     let order_id = Uuid::new_v4().to_string();

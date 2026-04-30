@@ -14,6 +14,7 @@ export const SessionState = z.object({
   status: SessionStatus,
   spot: SpotRef,
   opened_by: z.number().int(),
+  opened_at_ms: z.number().int(),
   customer_label: z.string().nullable(),
   team: z.string().nullable(),
   order_ids: z.array(z.string()),

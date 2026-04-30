@@ -79,6 +79,13 @@ fn warm_up_replays_live_session_with_orders() {
     let s = store.sessions.get("sess1").unwrap();
     assert_eq!(s.order_ids, vec!["ord1"]);
     assert!(store.orders.contains_key("ord1"));
+    // warm_up sources opened_at_ms from the EventRow.ts so the time-billed UI
+    // sees the original session-open wall clock after a restart.
+    assert!(
+        s.opened_at_ms > 0,
+        "warm_up should populate opened_at_ms from EventRow.ts (got {})",
+        s.opened_at_ms
+    );
 }
 
 #[test]
@@ -175,7 +182,7 @@ fn merged_session_bill_includes_source_orders() {
             customer_label: None,
             team: None,
         },
-        ApplyCtx { aggregate_id: "A" },
+        ApplyCtx { aggregate_id: "A", at_ms: 0 },
     )
     .unwrap();
     apply(
@@ -186,7 +193,7 @@ fn merged_session_bill_includes_source_orders() {
             customer_label: None,
             team: None,
         },
-        ApplyCtx { aggregate_id: "B" },
+        ApplyCtx { aggregate_id: "B", at_ms: 0 },
     )
     .unwrap();
     apply(
@@ -196,7 +203,7 @@ fn merged_session_bill_includes_source_orders() {
             order_id: "oA".into(),
             items: vec![item(1, 3, 100)],
         },
-        ApplyCtx { aggregate_id: "oA" },
+        ApplyCtx { aggregate_id: "oA", at_ms: 0 },
     )
     .unwrap();
     apply(
@@ -206,7 +213,7 @@ fn merged_session_bill_includes_source_orders() {
             order_id: "oB".into(),
             items: vec![item(2, 2, 250)],
         },
-        ApplyCtx { aggregate_id: "oB" },
+        ApplyCtx { aggregate_id: "oB", at_ms: 0 },
     )
     .unwrap();
     apply(
@@ -215,7 +222,7 @@ fn merged_session_bill_includes_source_orders() {
             into_session: "A".into(),
             sources: vec!["B".into()],
         },
-        ApplyCtx { aggregate_id: "A" },
+        ApplyCtx { aggregate_id: "A", at_ms: 0 },
     )
     .unwrap();
 

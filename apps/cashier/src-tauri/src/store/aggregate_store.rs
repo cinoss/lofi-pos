@@ -115,6 +115,7 @@ impl AggregateStore {
                 &ev,
                 ApplyCtx {
                     aggregate_id: &row.aggregate_id,
+                    at_ms: row.ts,
                 },
             )?;
         }

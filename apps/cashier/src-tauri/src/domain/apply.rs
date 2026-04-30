@@ -11,6 +11,11 @@ use crate::store::aggregate_store::AggregateStore;
 
 pub struct ApplyCtx<'a> {
     pub aggregate_id: &'a str,
+    /// Wall-clock timestamp (ms since epoch) of the event being applied.
+    /// At write time this is the value the event row was stamped with; at
+    /// warm_up time it is `EventRow.ts`. Currently consumed only to seed
+    /// `SessionState.opened_at_ms` for time-billed UI.
+    pub at_ms: i64,
 }
 
 pub fn apply(store: &AggregateStore, event: &DomainEvent, ctx: ApplyCtx<'_>) -> AppResult<()> {
@@ -28,6 +33,7 @@ pub fn apply(store: &AggregateStore, event: &DomainEvent, ctx: ApplyCtx<'_>) -> 
                     status: SessionStatus::Open,
                     spot: spot.clone(),
                     opened_by: *opened_by,
+                    opened_at_ms: ctx.at_ms,
                     customer_label: customer_label.clone(),
                     team: team.clone(),
                     order_ids: Vec::new(),
@@ -175,23 +181,40 @@ mod tests {
     #[test]
     fn opened_inserts_session() {
         let s = AggregateStore::new();
-        apply(&s, &opened(1), ApplyCtx { aggregate_id: "a" }).unwrap();
+        apply(&s, &opened(1), ApplyCtx { aggregate_id: "a", at_ms: 0 }).unwrap();
         let r = s.sessions.get("a").unwrap();
         assert_eq!(r.status, SessionStatus::Open);
         assert!(r.order_ids.is_empty());
     }
 
     #[test]
+    fn opened_captures_at_ms() {
+        // ApplyCtx.at_ms threads the event-row wall clock into SessionState so
+        // the time-billed UI can compute elapsed minutes without a side query.
+        let s = AggregateStore::new();
+        apply(
+            &s,
+            &opened(1),
+            ApplyCtx {
+                aggregate_id: "a",
+                at_ms: 1_700_000_000_000,
+            },
+        )
+        .unwrap();
+        assert_eq!(s.sessions.get("a").unwrap().opened_at_ms, 1_700_000_000_000);
+    }
+
+    #[test]
     fn closed_marks_session() {
         let s = AggregateStore::new();
-        apply(&s, &opened(1), ApplyCtx { aggregate_id: "a" }).unwrap();
+        apply(&s, &opened(1), ApplyCtx { aggregate_id: "a", at_ms: 0 }).unwrap();
         apply(
             &s,
             &DomainEvent::SessionClosed {
                 closed_by: 1,
                 reason: None,
             },
-            ApplyCtx { aggregate_id: "a" },
+            ApplyCtx { aggregate_id: "a", at_ms: 0 },
         )
         .unwrap();
         assert_eq!(s.sessions.get("a").unwrap().status, SessionStatus::Closed);
@@ -203,9 +226,7 @@ mod tests {
         apply(
             &s,
             &opened(1),
-            ApplyCtx {
-                aggregate_id: "sess",
-            },
+            ApplyCtx { aggregate_id: "sess", at_ms: 0 },
         )
         .unwrap();
         apply(
@@ -215,7 +236,7 @@ mod tests {
                 order_id: "o1".into(),
                 items: vec![item(1, 1, 100)],
             },
-            ApplyCtx { aggregate_id: "o1" },
+            ApplyCtx { aggregate_id: "o1", at_ms: 0 },
         )
         .unwrap();
         assert_eq!(s.sessions.get("sess").unwrap().order_ids, vec!["o1"]);
@@ -225,8 +246,8 @@ mod tests {
     #[test]
     fn merge_absorbs_source_orders_and_removes_source() {
         let s = AggregateStore::new();
-        apply(&s, &opened(1), ApplyCtx { aggregate_id: "A" }).unwrap();
-        apply(&s, &opened(1), ApplyCtx { aggregate_id: "B" }).unwrap();
+        apply(&s, &opened(1), ApplyCtx { aggregate_id: "A", at_ms: 0 }).unwrap();
+        apply(&s, &opened(1), ApplyCtx { aggregate_id: "B", at_ms: 0 }).unwrap();
         apply(
             &s,
             &DomainEvent::OrderPlaced {
@@ -234,7 +255,7 @@ mod tests {
                 order_id: "oA".into(),
                 items: vec![item(1, 1, 100)],
             },
-            ApplyCtx { aggregate_id: "oA" },
+            ApplyCtx { aggregate_id: "oA", at_ms: 0 },
         )
         .unwrap();
         apply(
@@ -244,7 +265,7 @@ mod tests {
                 order_id: "oB".into(),
                 items: vec![item(2, 1, 200)],
             },
-            ApplyCtx { aggregate_id: "oB" },
+            ApplyCtx { aggregate_id: "oB", at_ms: 0 },
         )
         .unwrap();
 
@@ -254,7 +275,7 @@ mod tests {
                 into_session: "A".into(),
                 sources: vec!["B".into()],
             },
-            ApplyCtx { aggregate_id: "A" },
+            ApplyCtx { aggregate_id: "A", at_ms: 0 },
         )
         .unwrap();
 
@@ -272,9 +293,7 @@ mod tests {
         apply(
             &s,
             &opened(1),
-            ApplyCtx {
-                aggregate_id: "sess",
-            },
+            ApplyCtx { aggregate_id: "sess", at_ms: 0 },
         )
         .unwrap();
         apply(
@@ -284,7 +303,7 @@ mod tests {
                 order_id: "o".into(),
                 items: vec![item(1, 1, 100), item(2, 1, 200)],
             },
-            ApplyCtx { aggregate_id: "o" },
+            ApplyCtx { aggregate_id: "o", at_ms: 0 },
         )
         .unwrap();
         apply(
@@ -294,7 +313,7 @@ mod tests {
                 item_index: 1,
                 reason: None,
             },
-            ApplyCtx { aggregate_id: "o" },
+            ApplyCtx { aggregate_id: "o", at_ms: 0 },
         )
         .unwrap();
         let o = s.orders.get("o").unwrap();
@@ -308,9 +327,7 @@ mod tests {
         apply(
             &s,
             &opened(1),
-            ApplyCtx {
-                aggregate_id: "sess",
-            },
+            ApplyCtx { aggregate_id: "sess", at_ms: 0 },
         )
         .unwrap();
         apply(
@@ -320,7 +337,7 @@ mod tests {
                 order_id: "o".into(),
                 items: vec![item(1, 5, 100)],
             },
-            ApplyCtx { aggregate_id: "o" },
+            ApplyCtx { aggregate_id: "o", at_ms: 0 },
         )
         .unwrap();
         apply(
@@ -331,7 +348,7 @@ mod tests {
                 qty: 2,
                 reason: None,
             },
-            ApplyCtx { aggregate_id: "o" },
+            ApplyCtx { aggregate_id: "o", at_ms: 0 },
         )
         .unwrap();
         assert_eq!(s.orders.get("o").unwrap().items[0].returned_qty, 2);
@@ -350,9 +367,7 @@ mod tests {
                 total: 108,
                 method: "cash".into(),
             },
-            ApplyCtx {
-                aggregate_id: "pay",
-            },
+            ApplyCtx { aggregate_id: "pay", at_ms: 0 },
         )
         .unwrap();
         let p = s.payments.get("sess").unwrap();
@@ -362,7 +377,7 @@ mod tests {
     #[test]
     fn transfer_updates_spot() {
         let s = AggregateStore::new();
-        apply(&s, &opened(1), ApplyCtx { aggregate_id: "a" }).unwrap();
+        apply(&s, &opened(1), ApplyCtx { aggregate_id: "a", at_ms: 0 }).unwrap();
         apply(
             &s,
             &DomainEvent::SessionTransferred {
@@ -378,7 +393,7 @@ mod tests {
                     room_name: None,
                 },
             },
-            ApplyCtx { aggregate_id: "a" },
+            ApplyCtx { aggregate_id: "a", at_ms: 0 },
         )
         .unwrap();
         let r = s.sessions.get("a").unwrap();
@@ -389,14 +404,14 @@ mod tests {
     #[test]
     fn split_marks_source_split() {
         let s = AggregateStore::new();
-        apply(&s, &opened(1), ApplyCtx { aggregate_id: "a" }).unwrap();
+        apply(&s, &opened(1), ApplyCtx { aggregate_id: "a", at_ms: 0 }).unwrap();
         apply(
             &s,
             &DomainEvent::SessionSplit {
                 from_session: "a".into(),
                 new_sessions: vec!["b".into(), "c".into()],
             },
-            ApplyCtx { aggregate_id: "a" },
+            ApplyCtx { aggregate_id: "a", at_ms: 0 },
         )
         .unwrap();
         assert_eq!(s.sessions.get("a").unwrap().status, SessionStatus::Split);

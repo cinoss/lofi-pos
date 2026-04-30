@@ -105,6 +105,11 @@ impl CommandService {
             Some((id, name)) => (Some(*id), name.as_deref()),
             None => (None, None),
         };
+        // Capture the wall-clock now once so the write timestamp and
+        // the in-memory apply use the exact same `at_ms`. This is what
+        // surfaces as `SessionState.opened_at_ms` for time-billed UI.
+        let at = self.clock.now();
+        let at_ms = at.timestamp_millis();
         self.event_service.write(
             WriteCtx {
                 aggregate_id,
@@ -112,13 +117,20 @@ impl CommandService {
                 actor_name: actor_name.as_deref(),
                 override_staff_id: override_id,
                 override_staff_name: override_name,
-                at: None,
+                at: Some(at),
             },
             &event,
         )?;
 
         // Mutate memory.
-        apply(&self.store, &event, ApplyCtx { aggregate_id })?;
+        apply(
+            &self.store,
+            &event,
+            ApplyCtx {
+                aggregate_id,
+                at_ms,
+            },
+        )?;
 
         // Notify WS subscribers (best-effort; SendError = no live receivers).
         let _ = self
