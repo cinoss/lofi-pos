@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueries } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
+import { Trans } from "@lingui/react/macro";
+import { t } from "@lingui/core/macro";
 import { SessionState, OrderState, ApiError } from "@lofi-pos/shared";
 import type { TakePaymentInput } from "@lofi-pos/shared";
 import { Button } from "@lofi-pos/ui/components/button";
@@ -97,36 +99,44 @@ export function PaymentRoute() {
 
   return (
     <div className="max-w-md mx-auto">
-      <h1 className="text-2xl font-semibold mb-4">Take payment</h1>
+      <h1 className="text-2xl font-semibold mb-4">
+        <Trans>Take payment</Trans>
+      </h1>
       <div className="space-y-3">
-        <Field label="Subtotal (VND)" value={subtotal} onChange={setSubtotal} />
         <Field
-          label="Discount %"
+          label={t`Subtotal (VND)`}
+          value={subtotal}
+          onChange={setSubtotal}
+        />
+        <Field
+          label={t`Discount %`}
           value={discountPct}
           onChange={setDiscountPct}
         />
-        <Field label="VAT %" value={vatPct} onChange={setVatPct} />
+        <Field label={t`VAT %`} value={vatPct} onChange={setVatPct} />
         <div>
-          <label className="block text-sm mb-1">Method</label>
+          <label className="block text-sm mb-1">
+            <Trans>Method</Trans>
+          </label>
           <select
             className="border rounded px-2 py-1 w-full"
             value={method}
             onChange={(e) => setMethod(e.target.value)}
           >
-            <option value="cash">Cash</option>
-            <option value="card">Card</option>
-            <option value="transfer">Bank transfer</option>
+            <option value="cash">{t`Cash`}</option>
+            <option value="card">{t`Card`}</option>
+            <option value="transfer">{t`Bank transfer`}</option>
           </select>
         </div>
         <div className="text-2xl font-bold pt-2 border-t">
-          Total: {total.toLocaleString("vi-VN")}đ
+          <Trans>Total: {total.toLocaleString("vi-VN")}đ</Trans>
         </div>
         <Button
           className="w-full"
           disabled={pay.isPending}
           onClick={submit}
         >
-          Charge
+          <Trans>Charge</Trans>
         </Button>
         {pay.error instanceof ApiError &&
           pay.error.code !== "override_required" && (

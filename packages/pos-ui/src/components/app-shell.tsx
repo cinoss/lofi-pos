@@ -1,4 +1,5 @@
 import { Link, Outlet } from "react-router-dom";
+import { Trans } from "@lingui/react/macro";
 import { Button } from "@lofi-pos/ui/components/button";
 import { useAuth } from "../auth-context";
 import { useSettings } from "../settings-context";
@@ -19,22 +20,24 @@ export function AppShell() {
         </Link>
         <nav className="flex items-center gap-4">
           <Link to="/sessions" className="text-sm hover:underline">
-            Sessions
+            <Trans>Sessions</Trans>
           </Link>
           <Link to="/spots" className="text-sm hover:underline">
-            Open New
+            <Trans>Open New</Trans>
           </Link>
           <ConnectionStatus />
           {claims && (
             <span className="text-sm text-gray-500">
-              {claims.role} · staff #{claims.staff_id}
+              <Trans>
+                {claims.role} · staff #{claims.staff_id}
+              </Trans>
             </span>
           )}
           <Button size="sm" variant="outline" onClick={lock}>
-            Lock
+            <Trans>Lock</Trans>
           </Button>
           <Button size="sm" variant="ghost" onClick={() => void logout()}>
-            Logout
+            <Trans>Logout</Trans>
           </Button>
         </nav>
       </header>

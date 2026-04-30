@@ -1,0 +1,145 @@
+msgid ""
+msgstr ""
+"POT-Creation-Date: 2026-04-30 00:00+0000\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"X-Generator: @lingui/cli\n"
+"Language: en\n"
+"Project-Id-Version: \n"
+"Report-Msgid-Bugs-To: \n"
+"PO-Revision-Date: \n"
+"Last-Translator: \n"
+"Language-Team: \n"
+"Plural-Forms: \n"
+
+#. placeholder {0}: s.order_ids.length
+#: ../../packages/pos-ui/src/routes/sessions.tsx
+msgid "{0, plural, one {# order} other {# orders}}"
+msgstr "{0, plural, one {# order} other {# orders}}"
+
+#. placeholder {0}: claims.role
+#. placeholder {1}: claims.staff_id
+#: ../../packages/pos-ui/src/components/app-shell.tsx
+msgid "{0} · staff #{1}"
+msgstr "{0} · staff #{1}"
+
+#: ../../packages/pos-ui/src/routes/lock.tsx
+msgid "🔒 Locked — Re-enter PIN"
+msgstr "🔒 Locked — Re-enter PIN"
+
+#: ../../packages/pos-ui/src/routes/payment.tsx
+msgid "Bank transfer"
+msgstr "Bank transfer"
+
+#: ../../packages/pos-ui/src/routes/payment.tsx
+msgid "Card"
+msgstr "Card"
+
+#: ../../packages/pos-ui/src/routes/payment.tsx
+msgid "Cash"
+msgstr "Cash"
+
+#: ../../packages/pos-ui/src/routes/payment.tsx
+msgid "Charge"
+msgstr "Charge"
+
+#: ../../packages/pos-ui/src/routes/payment.tsx
+msgid "Discount %"
+msgstr "Discount %"
+
+#: ../../packages/pos-ui/src/components/pin-pad.tsx
+msgid "Enter PIN"
+msgstr "Enter PIN"
+
+#: ../../packages/pos-ui/src/routes/lock.tsx
+msgid "Error"
+msgstr "Error"
+
+#. placeholder {0}: String(error)
+#: ../../packages/pos-ui/src/routes/sessions.tsx
+msgid "Error: {0}"
+msgstr "Error: {0}"
+
+#: ../../packages/pos-ui/src/routes/sessions.tsx
+#: ../../packages/pos-ui/src/routes/spot-picker.tsx
+msgid "Loading…"
+msgstr "Loading…"
+
+#: ../../packages/pos-ui/src/components/app-shell.tsx
+msgid "Lock"
+msgstr "Lock"
+
+#: ../../packages/pos-ui/src/routes/login.tsx
+msgid "LoFi POS — Sign In"
+msgstr "LoFi POS — Sign In"
+
+#: ../../packages/pos-ui/src/components/app-shell.tsx
+msgid "Logout"
+msgstr "Logout"
+
+#: ../../packages/pos-ui/src/routes/payment.tsx
+msgid "Method"
+msgstr "Method"
+
+#: ../../packages/pos-ui/src/routes/login.tsx
+msgid "Network error"
+msgstr "Network error"
+
+#: ../../packages/pos-ui/src/routes/sessions.tsx
+msgid "No active sessions."
+msgstr "No active sessions."
+
+#: ../../packages/pos-ui/src/routes/spot-picker.tsx
+msgid "No idle spots."
+msgstr "No idle spots."
+
+#: ../../packages/pos-ui/src/components/app-shell.tsx
+msgid "Open New"
+msgstr "Open New"
+
+#: ../../packages/pos-ui/src/routes/spot-picker.tsx
+msgid "Open new session"
+msgstr "Open new session"
+
+#: ../../packages/pos-ui/src/routes/sessions.tsx
+msgid "Open new session →"
+msgstr "Open new session →"
+
+#: ../../packages/pos-ui/src/routes/sessions.tsx
+msgid "Room"
+msgstr "Room"
+
+#: ../../packages/pos-ui/src/components/app-shell.tsx
+msgid "Sessions"
+msgstr "Sessions"
+
+#: ../../packages/pos-ui/src/routes/payment.tsx
+msgid "Subtotal (VND)"
+msgstr "Subtotal (VND)"
+
+#: ../../packages/pos-ui/src/routes/sessions.tsx
+msgid "Table"
+msgstr "Table"
+
+#: ../../packages/pos-ui/src/routes/payment.tsx
+msgid "Take payment"
+msgstr "Take payment"
+
+#: ../../packages/pos-ui/src/routes/login.tsx
+msgid "Too many attempts. Try again in a minute."
+msgstr "Too many attempts. Try again in a minute."
+
+#. placeholder {0}: total.toLocaleString("vi-VN")
+#: ../../packages/pos-ui/src/routes/payment.tsx
+msgid "Total: {0}đ"
+msgstr "Total: {0}đ"
+
+#: ../../packages/pos-ui/src/routes/payment.tsx
+msgid "VAT %"
+msgstr "VAT %"
+
+#: ../../packages/pos-ui/src/routes/lock.tsx
+#: ../../packages/pos-ui/src/routes/login.tsx
+msgid "Wrong PIN"
+msgstr "Wrong PIN"

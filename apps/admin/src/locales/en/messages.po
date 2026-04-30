@@ -1,0 +1,286 @@
+msgid ""
+msgstr ""
+"POT-Creation-Date: 2026-04-30 00:00+0000\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"X-Generator: @lingui/cli\n"
+"Language: en\n"
+"Project-Id-Version: \n"
+"Report-Msgid-Bugs-To: \n"
+"PO-Revision-Date: \n"
+"Last-Translator: \n"
+"Language-Team: \n"
+"Plural-Forms: \n"
+
+#. placeholder {0}: s.order_ids.length
+#: ../../packages/pos-ui/src/routes/sessions.tsx
+msgid "{0, plural, one {# order} other {# orders}}"
+msgstr "{0, plural, one {# order} other {# orders}}"
+
+#. placeholder {0}: claims.role
+#. placeholder {1}: claims.staff_id
+#: ../../packages/pos-ui/src/components/app-shell.tsx
+#: src/App.tsx
+msgid "{0} · staff #{1}"
+msgstr "{0} · staff #{1}"
+
+#: ../../packages/pos-ui/src/routes/lock.tsx
+msgid "🔒 Locked — Re-enter PIN"
+msgstr "🔒 Locked — Re-enter PIN"
+
+#: src/routes/setup.tsx
+msgid "Address"
+msgstr "Address"
+
+#: ../../packages/pos-ui/src/routes/payment.tsx
+msgid "Bank transfer"
+msgstr "Bank transfer"
+
+#: src/routes/setup.tsx
+msgid "Business-day cutoff hour (0–23)"
+msgstr "Business-day cutoff hour (0–23)"
+
+#: ../../packages/pos-ui/src/routes/payment.tsx
+msgid "Card"
+msgstr "Card"
+
+#: ../../packages/pos-ui/src/routes/payment.tsx
+msgid "Cash"
+msgstr "Cash"
+
+#: ../../packages/pos-ui/src/routes/payment.tsx
+msgid "Charge"
+msgstr "Charge"
+
+#: src/routes/setup.tsx
+msgid "Complete setup"
+msgstr "Complete setup"
+
+#: src/routes/setup.tsx
+msgid "Confirm PIN *"
+msgstr "Confirm PIN *"
+
+#: src/routes/setup.tsx
+msgid "Continue"
+msgstr "Continue"
+
+#: src/routes/setup.tsx
+msgid "Currency *"
+msgstr "Currency *"
+
+#: ../../packages/pos-ui/src/routes/payment.tsx
+msgid "Discount %"
+msgstr "Discount %"
+
+#: ../../packages/pos-ui/src/components/pin-pad.tsx
+msgid "Enter PIN"
+msgstr "Enter PIN"
+
+#: ../../packages/pos-ui/src/routes/lock.tsx
+msgid "Error"
+msgstr "Error"
+
+#. placeholder {0}: String(error)
+#: ../../packages/pos-ui/src/routes/sessions.tsx
+msgid "Error: {0}"
+msgstr "Error: {0}"
+
+#: src/routes/setup.tsx
+msgid "First-time setup"
+msgstr "First-time setup"
+
+#: ../../packages/pos-ui/src/routes/sessions.tsx
+#: ../../packages/pos-ui/src/routes/spot-picker.tsx
+#: src/App.tsx
+msgid "Loading…"
+msgstr "Loading…"
+
+#: src/routes/setup.tsx
+msgid "Locale *"
+msgstr "Locale *"
+
+#: ../../packages/pos-ui/src/components/app-shell.tsx
+msgid "Lock"
+msgstr "Lock"
+
+#: src/App.tsx
+msgid "LoFi POS — Admin"
+msgstr "LoFi POS — Admin"
+
+#: ../../packages/pos-ui/src/routes/login.tsx
+msgid "LoFi POS — Sign In"
+msgstr "LoFi POS — Sign In"
+
+#: ../../packages/pos-ui/src/components/app-shell.tsx
+#: src/App.tsx
+#: src/App.tsx
+msgid "Logout"
+msgstr "Logout"
+
+#: ../../packages/pos-ui/src/routes/payment.tsx
+msgid "Method"
+msgstr "Method"
+
+#: ../../packages/pos-ui/src/routes/login.tsx
+msgid "Network error"
+msgstr "Network error"
+
+#: ../../packages/pos-ui/src/routes/sessions.tsx
+msgid "No active sessions."
+msgstr "No active sessions."
+
+#: ../../packages/pos-ui/src/routes/spot-picker.tsx
+msgid "No idle spots."
+msgstr "No idle spots."
+
+#: ../../packages/pos-ui/src/components/app-shell.tsx
+msgid "Open New"
+msgstr "Open New"
+
+#: ../../packages/pos-ui/src/routes/spot-picker.tsx
+msgid "Open new session"
+msgstr "Open new session"
+
+#: ../../packages/pos-ui/src/routes/sessions.tsx
+msgid "Open new session →"
+msgstr "Open new session →"
+
+#: src/routes/setup.tsx
+msgid "Operational"
+msgstr "Operational"
+
+#: src/routes/setup.tsx
+msgid "Owner account"
+msgstr "Owner account"
+
+#: src/routes/setup.tsx
+msgid "Owner name *"
+msgstr "Owner name *"
+
+#: src/routes/setup.tsx
+msgid "Owner PIN (min 6) *"
+msgstr "Owner PIN (min 6) *"
+
+#: src/App.tsx
+msgid "Owner role required"
+msgstr "Owner role required"
+
+#: src/routes/setup.tsx
+msgid "Phone"
+msgstr "Phone"
+
+#: src/routes/setup.tsx
+msgid "PIN confirmation does not match"
+msgstr "PIN confirmation does not match"
+
+#: src/App.tsx
+msgid "Products"
+msgstr "Products"
+
+#: src/routes/setup.tsx
+msgid "Receipt footer"
+msgstr "Receipt footer"
+
+#: src/App.tsx
+msgid "Reports"
+msgstr "Reports"
+
+#: src/routes/setup.tsx
+msgid "Return to the cashier and click <0>I've finished setup</0> to continue. You can now also sign in to this admin console with the Owner PIN you just set."
+msgstr "Return to the cashier and click <0>I've finished setup</0> to continue. You can now also sign in to this admin console with the Owner PIN you just set."
+
+#: ../../packages/pos-ui/src/routes/sessions.tsx
+msgid "Room"
+msgstr "Room"
+
+#: src/routes/setup.tsx
+msgid "Saving…"
+msgstr "Saving…"
+
+#: ../../packages/pos-ui/src/components/app-shell.tsx
+msgid "Sessions"
+msgstr "Sessions"
+
+#: src/App.tsx
+msgid "Settings"
+msgstr "Settings"
+
+#: src/routes/setup.tsx
+msgid "Setup complete"
+msgstr "Setup complete"
+
+#: src/routes/setup.tsx
+msgid "Setup failed"
+msgstr "Setup failed"
+
+#: src/App.tsx
+msgid "Spots"
+msgstr "Spots"
+
+#: src/App.tsx
+msgid "Staff"
+msgstr "Staff"
+
+#: ../../packages/pos-ui/src/routes/payment.tsx
+msgid "Subtotal (VND)"
+msgstr "Subtotal (VND)"
+
+#: ../../packages/pos-ui/src/routes/sessions.tsx
+msgid "Table"
+msgstr "Table"
+
+#: ../../packages/pos-ui/src/routes/payment.tsx
+msgid "Take payment"
+msgstr "Take payment"
+
+#: src/routes/setup.tsx
+msgid "Tax ID"
+msgstr "Tax ID"
+
+#. placeholder {0}: claims?.role ?? "unauthenticated"
+#: src/App.tsx
+msgid "The admin console is restricted to the Owner role. Your account is currently {0}."
+msgstr "The admin console is restricted to the Owner role. Your account is currently {0}."
+
+#: src/routes/setup.tsx
+msgid "The Owner can sign into the cashier and the admin console. Choose a PIN of at least 6 digits and keep it private."
+msgstr "The Owner can sign into the cashier and the admin console. Choose a PIN of at least 6 digits and keep it private."
+
+#: src/routes/setup.tsx
+msgid "Timezone offset (seconds, e.g. 25200 = +07:00)"
+msgstr "Timezone offset (seconds, e.g. 25200 = +07:00)"
+
+#: ../../packages/pos-ui/src/routes/login.tsx
+msgid "Too many attempts. Try again in a minute."
+msgstr "Too many attempts. Try again in a minute."
+
+#. placeholder {0}: total.toLocaleString("vi-VN")
+#: ../../packages/pos-ui/src/routes/payment.tsx
+msgid "Total: {0}đ"
+msgstr "Total: {0}đ"
+
+#: ../../packages/pos-ui/src/routes/payment.tsx
+msgid "VAT %"
+msgstr "VAT %"
+
+#: src/routes/setup.tsx
+msgid "Venue identity"
+msgstr "Venue identity"
+
+#: src/routes/setup.tsx
+msgid "Venue name *"
+msgstr "Venue name *"
+
+#: src/routes/setup.tsx
+msgid "Welcome. Configure your venue, operational defaults, and the Owner account. All fields are saved together; nothing is persisted until you submit successfully."
+msgstr "Welcome. Configure your venue, operational defaults, and the Owner account. All fields are saved together; nothing is persisted until you submit successfully."
+
+#: ../../packages/pos-ui/src/routes/lock.tsx
+#: ../../packages/pos-ui/src/routes/login.tsx
+msgid "Wrong PIN"
+msgstr "Wrong PIN"
+
+#: src/routes/setup.tsx
+msgid "Your venue is configured and the Owner account has been created."
+msgstr "Your venue is configured and the Owner account has been created."

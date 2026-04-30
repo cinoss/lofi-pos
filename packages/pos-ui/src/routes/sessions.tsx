@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
+import { Trans, Plural } from "@lingui/react/macro";
 import { z } from "zod";
 import { SessionState } from "@lofi-pos/shared";
 import { useApiClient } from "../api-context";
@@ -11,18 +12,25 @@ export function SessionsRoute() {
     queryFn: () => apiClient.get("/sessions/active", z.array(SessionState)),
   });
 
-  if (isLoading) return <div>Loading…</div>;
-  if (error) return <div className="text-red-600">Error: {String(error)}</div>;
+  if (isLoading) return <div><Trans>Loading…</Trans></div>;
+  if (error)
+    return (
+      <div className="text-red-600">
+        <Trans>Error: {String(error)}</Trans>
+      </div>
+    );
 
   if (!data || data.length === 0) {
     return (
       <div className="text-center">
-        <p className="text-gray-500">No active sessions.</p>
+        <p className="text-gray-500">
+          <Trans>No active sessions.</Trans>
+        </p>
         <Link
           to="/spots"
           className="mt-4 inline-block text-blue-600 hover:underline"
         >
-          Open new session →
+          <Trans>Open new session →</Trans>
         </Link>
       </div>
     );
@@ -38,11 +46,15 @@ export function SessionsRoute() {
         >
           <div className="font-semibold">{s.spot.name}</div>
           <div className="text-sm text-gray-500">
-            {s.spot.kind === "room" ? "Room" : "Table"} ·{" "}
-            {s.customer_label ?? "—"}
+            {s.spot.kind === "room" ? <Trans>Room</Trans> : <Trans>Table</Trans>}{" "}
+            · {s.customer_label ?? "—"}
           </div>
           <div className="mt-2 text-xs text-gray-400">
-            {s.order_ids.length} orders
+            <Plural
+              value={s.order_ids.length}
+              one="# order"
+              other="# orders"
+            />
           </div>
         </Link>
       ))}

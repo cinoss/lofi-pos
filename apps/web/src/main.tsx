@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter } from "react-router-dom";
+import { I18nProvider } from "@lingui/react";
 import { ApiClient } from "@lofi-pos/shared";
 import {
   ApiClientProvider,
@@ -12,6 +13,7 @@ import {
 } from "@lofi-pos/pos-ui";
 import "./index.css";
 import App from "./App";
+import { i18n, setLocale, normalizeLocale } from "./lib/i18n";
 
 const API_BASE =
   import.meta.env.VITE_API_BASE ?? window.location.origin;
@@ -28,15 +30,20 @@ const attachWS = (qc: QueryClient) =>
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
-      <ApiClientProvider client={apiClient}>
-        <AuthProvider client={apiClient} attachWS={attachWS}>
-          <SettingsProvider client={apiClient}>
-            <BrowserRouter>
-              <App />
-            </BrowserRouter>
-          </SettingsProvider>
-        </AuthProvider>
-      </ApiClientProvider>
+      <I18nProvider i18n={i18n}>
+        <ApiClientProvider client={apiClient}>
+          <AuthProvider client={apiClient} attachWS={attachWS}>
+            <SettingsProvider
+              client={apiClient}
+              onLoaded={(s) => setLocale(normalizeLocale(s.locale))}
+            >
+              <BrowserRouter>
+                <App />
+              </BrowserRouter>
+            </SettingsProvider>
+          </AuthProvider>
+        </ApiClientProvider>
+      </I18nProvider>
     </QueryClientProvider>
   </React.StrictMode>,
 );

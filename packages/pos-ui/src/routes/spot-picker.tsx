@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
+import { Trans } from "@lingui/react/macro";
 import { z } from "zod";
 import { Spot, SessionState } from "@lofi-pos/shared";
 import type { OpenSessionInput } from "@lofi-pos/shared";
@@ -28,13 +29,15 @@ export function SpotPickerRoute() {
     },
   });
 
-  if (!spots) return <div>Loading…</div>;
+  if (!spots) return <div><Trans>Loading…</Trans></div>;
 
   const idle = spots.filter((s) => s.status === "idle");
 
   return (
     <div>
-      <h1 className="text-2xl font-semibold mb-4">Open new session</h1>
+      <h1 className="text-2xl font-semibold mb-4">
+        <Trans>Open new session</Trans>
+      </h1>
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
         {idle.map((s) => (
           <Button
@@ -54,7 +57,11 @@ export function SpotPickerRoute() {
           </Button>
         ))}
       </div>
-      {idle.length === 0 && <p className="text-gray-500">No idle spots.</p>}
+      {idle.length === 0 && (
+        <p className="text-gray-500">
+          <Trans>No idle spots.</Trans>
+        </p>
+      )}
     </div>
   );
 }

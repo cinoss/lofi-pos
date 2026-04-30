@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { t } from "@lingui/core/macro";
 import { Button } from "@lofi-pos/ui/components/button";
 import { MIN_PIN_LEN } from "@lofi-pos/shared";
 
@@ -34,11 +35,12 @@ export function PinPad({
   onSubmit,
   error,
   disabled,
-  title = "Enter PIN",
+  title,
   size,
 }: PinPadProps) {
   const [pin, setPin] = useState("");
   const [autoTouch, setAutoTouch] = useState(false);
+  const titleStr = title ?? t`Enter PIN`;
 
   useEffect(() => {
     if (typeof window === "undefined" || !window.matchMedia) return;
@@ -66,7 +68,7 @@ export function PinPad({
 
   return (
     <div className="flex flex-col items-center gap-4 p-6">
-      <h2 className={`${titleClass} font-semibold`}>{title}</h2>
+      <h2 className={`${titleClass} font-semibold`}>{titleStr}</h2>
       <div className="text-3xl tracking-[0.5em] font-mono h-12">
         {pin.replace(/./g, "•") || (
           <span className="text-gray-400">______</span>

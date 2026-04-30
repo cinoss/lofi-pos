@@ -7,7 +7,7 @@ import tailwindcss from "@tailwindcss/vite";
 // is configured with the same `basename` in main.tsx.
 export default defineConfig({
   base: "/ui/admin/",
-  plugins: [react(), tailwindcss()],
+  plugins: [react({ babel: { plugins: ["macros"] } }), tailwindcss()],
   clearScreen: false,
   server: { port: 1421, strictPort: true },
 });

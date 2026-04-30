@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes, Link, Outlet } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Trans } from "@lingui/react/macro";
 import { useAuth, LoginRoute, LockRoute, useApiClient } from "@lofi-pos/pos-ui";
 import { Button } from "@lofi-pos/ui/components/button";
 import { SetupState } from "@lofi-pos/shared";
@@ -16,13 +17,17 @@ function AdminShell() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="bg-white rounded-lg p-8 shadow-md max-w-md text-center">
-          <h1 className="text-xl font-semibold mb-2">Owner role required</h1>
+          <h1 className="text-xl font-semibold mb-2">
+            <Trans>Owner role required</Trans>
+          </h1>
           <p className="text-sm text-gray-600 mb-4">
-            The admin console is restricted to the Owner role. Your account is
-            currently {claims?.role ?? "unauthenticated"}.
+            <Trans>
+              The admin console is restricted to the Owner role. Your account is
+              currently {claims?.role ?? "unauthenticated"}.
+            </Trans>
           </p>
           <Button variant="outline" onClick={() => void logout()}>
-            Logout
+            <Trans>Logout</Trans>
           </Button>
         </div>
       </div>
@@ -32,29 +37,31 @@ function AdminShell() {
     <div className="min-h-screen flex flex-col">
       <header className="flex items-center justify-between border-b bg-white px-6 py-3">
         <Link to="/spots" className="text-xl font-semibold">
-          LoFi POS — Admin
+          <Trans>LoFi POS — Admin</Trans>
         </Link>
         <nav className="flex items-center gap-4 text-sm">
           <Link to="/spots" className="hover:underline">
-            Spots
+            <Trans>Spots</Trans>
           </Link>
           <Link to="/staff" className="hover:underline">
-            Staff
+            <Trans>Staff</Trans>
           </Link>
           <Link to="/products" className="hover:underline">
-            Products
+            <Trans>Products</Trans>
           </Link>
           <Link to="/settings" className="hover:underline">
-            Settings
+            <Trans>Settings</Trans>
           </Link>
           <Link to="/reports" className="hover:underline">
-            Reports
+            <Trans>Reports</Trans>
           </Link>
           <span className="text-gray-500">
-            {claims.role} · staff #{claims.staff_id}
+            <Trans>
+              {claims.role} · staff #{claims.staff_id}
+            </Trans>
           </span>
           <Button size="sm" variant="ghost" onClick={() => void logout()}>
-            Logout
+            <Trans>Logout</Trans>
           </Button>
         </nav>
       </header>
@@ -78,7 +85,7 @@ export default function App() {
   if (setupQ.isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <p className="text-sm text-gray-500">Loading…</p>
+        <p className="text-sm text-gray-500"><Trans>Loading…</Trans></p>
       </div>
     );
   }

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { t } from "@lingui/core/macro";
 import { ApiError } from "@lofi-pos/shared";
 import { PinPad } from "../components/pin-pad";
 import { useAuth } from "../auth-context";
@@ -22,8 +23,8 @@ export function LockRoute() {
       await login(pin);
       nav("/sessions", { replace: true });
     } catch (e) {
-      if (e instanceof ApiError && e.isUnauthorized()) setError("Wrong PIN");
-      else setError(e instanceof Error ? e.message : "Error");
+      if (e instanceof ApiError && e.isUnauthorized()) setError(t`Wrong PIN`);
+      else setError(e instanceof Error ? e.message : t`Error`);
     } finally {
       setBusy(false);
     }
@@ -33,7 +34,7 @@ export function LockRoute() {
     <div className="flex min-h-screen items-center justify-center bg-gray-900">
       <div className="rounded-lg bg-white p-2">
         <PinPad
-          title="🔒 Locked — Re-enter PIN"
+          title={t`🔒 Locked — Re-enter PIN`}
           onSubmit={onSubmit}
           error={error}
           disabled={busy}

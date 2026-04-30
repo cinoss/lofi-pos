@@ -6,7 +6,7 @@ import { VitePWA } from "vite-plugin-pwa";
 
 export default defineConfig({
   plugins: [
-    react(),
+    react({ babel: { plugins: ["macros"] } }),
     tailwindcss(),
     VitePWA({
       registerType: "autoUpdate",

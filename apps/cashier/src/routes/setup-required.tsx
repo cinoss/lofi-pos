@@ -1,4 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
+import { Trans } from "@lingui/react/macro";
+import { t } from "@lingui/core/macro";
 import { Button } from "@lofi-pos/ui/components/button";
 import { LinkQR } from "@lofi-pos/ui/components/link-qr";
 import { useSetupState } from "../lib/setup";
@@ -28,26 +30,32 @@ export function SetupRequiredRoute() {
     <div className="min-h-screen flex items-center justify-center bg-gray-50 p-6">
       <div className="max-w-lg w-full text-center space-y-6 p-8 bg-white rounded shadow">
         <div className="space-y-2">
-          <h1 className="text-2xl font-semibold">First-time setup required</h1>
+          <h1 className="text-2xl font-semibold">
+            <Trans>First-time setup required</Trans>
+          </h1>
           <p className="text-gray-600">
-            Welcome to LoFi POS. Before staff can sign in, the venue owner
-            needs to complete a short setup: venue name, currency, and the
-            Owner PIN.
+            <Trans>
+              Welcome to LoFi POS. Before staff can sign in, the venue owner
+              needs to complete a short setup: venue name, currency, and the
+              Owner PIN.
+            </Trans>
           </p>
         </div>
         <LinkQR
           url={adminSetupUrl}
-          label="Scan to open setup on your phone or laptop"
+          label={t`Scan to open setup on your phone or laptop`}
         />
         <div className="grid grid-cols-2 gap-3">
-          <Button onClick={openInBrowser}>Open in browser</Button>
+          <Button onClick={openInBrowser}>
+            <Trans>Open in browser</Trans>
+          </Button>
           <Button
             variant="outline"
             onClick={() =>
               qc.invalidateQueries({ queryKey: ["setup-state"] })
             }
           >
-            I&apos;ve finished setup
+            <Trans>I&apos;ve finished setup</Trans>
           </Button>
         </div>
       </div>
