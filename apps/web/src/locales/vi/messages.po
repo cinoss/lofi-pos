@@ -12,3 +12,134 @@ msgstr ""
 "Last-Translator: \n"
 "Language-Team: \n"
 "Plural-Forms: \n"
+
+#. placeholder {0}: s.order_ids.length
+#: ../../packages/pos-ui/src/routes/sessions.tsx
+msgid "{0, plural, one {# order} other {# orders}}"
+msgstr ""
+
+#. placeholder {0}: claims.role
+#. placeholder {1}: claims.staff_id
+#: ../../packages/pos-ui/src/components/app-shell.tsx
+msgid "{0} · staff #{1}"
+msgstr ""
+
+#: ../../packages/pos-ui/src/routes/lock.tsx
+msgid "🔒 Locked — Re-enter PIN"
+msgstr ""
+
+#: ../../packages/pos-ui/src/routes/payment.tsx
+msgid "Bank transfer"
+msgstr ""
+
+#: ../../packages/pos-ui/src/routes/payment.tsx
+msgid "Card"
+msgstr ""
+
+#: ../../packages/pos-ui/src/routes/payment.tsx
+msgid "Cash"
+msgstr ""
+
+#: ../../packages/pos-ui/src/routes/payment.tsx
+msgid "Charge"
+msgstr ""
+
+#: ../../packages/pos-ui/src/routes/payment.tsx
+msgid "Discount %"
+msgstr ""
+
+#: ../../packages/pos-ui/src/components/pin-pad.tsx
+msgid "Enter PIN"
+msgstr ""
+
+#: ../../packages/pos-ui/src/routes/lock.tsx
+msgid "Error"
+msgstr ""
+
+#. placeholder {0}: String(error)
+#: ../../packages/pos-ui/src/routes/sessions.tsx
+msgid "Error: {0}"
+msgstr ""
+
+#: ../../packages/pos-ui/src/routes/sessions.tsx
+#: ../../packages/pos-ui/src/routes/spot-picker.tsx
+msgid "Loading…"
+msgstr ""
+
+#: ../../packages/pos-ui/src/components/app-shell.tsx
+msgid "Lock"
+msgstr ""
+
+#: ../../packages/pos-ui/src/routes/login.tsx
+msgid "LoFi POS — Sign In"
+msgstr ""
+
+#: ../../packages/pos-ui/src/components/app-shell.tsx
+msgid "Logout"
+msgstr ""
+
+#: ../../packages/pos-ui/src/routes/payment.tsx
+msgid "Method"
+msgstr ""
+
+#: ../../packages/pos-ui/src/routes/login.tsx
+msgid "Network error"
+msgstr ""
+
+#: ../../packages/pos-ui/src/routes/sessions.tsx
+msgid "No active sessions."
+msgstr ""
+
+#: ../../packages/pos-ui/src/routes/spot-picker.tsx
+msgid "No idle spots."
+msgstr ""
+
+#: ../../packages/pos-ui/src/components/app-shell.tsx
+msgid "Open New"
+msgstr ""
+
+#: ../../packages/pos-ui/src/routes/spot-picker.tsx
+msgid "Open new session"
+msgstr ""
+
+#: ../../packages/pos-ui/src/routes/sessions.tsx
+msgid "Open new session →"
+msgstr ""
+
+#: ../../packages/pos-ui/src/routes/sessions.tsx
+msgid "Room"
+msgstr ""
+
+#: ../../packages/pos-ui/src/components/app-shell.tsx
+msgid "Sessions"
+msgstr ""
+
+#: ../../packages/pos-ui/src/routes/payment.tsx
+msgid "Subtotal (VND)"
+msgstr ""
+
+#: ../../packages/pos-ui/src/routes/sessions.tsx
+msgid "Table"
+msgstr ""
+
+#: ../../packages/pos-ui/src/routes/payment.tsx
+msgid "Take payment"
+msgstr ""
+
+#: ../../packages/pos-ui/src/routes/login.tsx
+msgid "Too many attempts. Try again in a minute."
+msgstr ""
+
+#. placeholder {0}: total.toLocaleString("vi-VN")
+#: ../../packages/pos-ui/src/routes/payment.tsx
+msgid "Total: {0}đ"
+msgstr ""
+
+#: ../../packages/pos-ui/src/routes/payment.tsx
+msgid "VAT %"
+msgstr ""
+
+#: ../../packages/pos-ui/src/routes/lock.tsx
+#: ../../packages/pos-ui/src/routes/login.tsx
+msgid "Wrong PIN"
+msgstr ""

@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
+import { Trans } from "@lingui/react/macro";
+import { t } from "@lingui/core/macro";
 import { Button } from "@lofi-pos/ui/components/button";
 import { SetupRequest, ApiError, AppErrorEnvelope } from "@lofi-pos/shared";
 
@@ -51,7 +53,7 @@ export function SetupRoute({ onSuccess }: SetupRouteProps) {
   const submit = useMutation({
     mutationFn: async (f: FormState) => {
       if (f.owner_pin !== f.owner_pin_confirm) {
-        throw new Error("PIN confirmation does not match");
+        throw new Error(t`PIN confirmation does not match`);
       }
       const payload = SetupRequest.parse({
         venue_name: f.venue_name.trim(),
@@ -90,7 +92,7 @@ export function SetupRoute({ onSuccess }: SetupRouteProps) {
     },
     onError: (e: unknown) => {
       setSuccess(false);
-      setError(e instanceof Error ? e.message : "Setup failed");
+      setError(e instanceof Error ? e.message : t`Setup failed`);
     },
   });
 
@@ -101,17 +103,23 @@ export function SetupRoute({ onSuccess }: SetupRouteProps) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 p-6">
         <div className="max-w-lg w-full rounded-lg bg-white p-8 shadow-sm space-y-4 text-center">
-          <h1 className="text-2xl font-semibold text-green-700">Setup complete</h1>
+          <h1 className="text-2xl font-semibold text-green-700">
+            <Trans>Setup complete</Trans>
+          </h1>
           <p className="text-gray-700">
-            Your venue is configured and the Owner account has been created.
+            <Trans>
+              Your venue is configured and the Owner account has been created.
+            </Trans>
           </p>
           <p className="text-gray-700">
-            Return to the cashier and click <strong>I&apos;ve finished setup</strong> to
-            continue. You can now also sign in to this admin console with the Owner
-            PIN you just set.
+            <Trans>
+              Return to the cashier and click{" "}
+              <strong>I&apos;ve finished setup</strong> to continue. You can now
+              also sign in to this admin console with the Owner PIN you just set.
+            </Trans>
           </p>
           <Button onClick={() => (onSuccess ? onSuccess() : window.location.reload())}>
-            Continue
+            <Trans>Continue</Trans>
           </Button>
         </div>
       </div>
@@ -122,11 +130,15 @@ export function SetupRoute({ onSuccess }: SetupRouteProps) {
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="mx-auto max-w-2xl space-y-6">
         <header className="space-y-1">
-          <h1 className="text-3xl font-semibold">First-time setup</h1>
+          <h1 className="text-3xl font-semibold">
+            <Trans>First-time setup</Trans>
+          </h1>
           <p className="text-gray-600 text-sm">
-            Welcome. Configure your venue, operational defaults, and the Owner
-            account. All fields are saved together; nothing is persisted until
-            you submit successfully.
+            <Trans>
+              Welcome. Configure your venue, operational defaults, and the Owner
+              account. All fields are saved together; nothing is persisted until
+              you submit successfully.
+            </Trans>
           </p>
         </header>
 
@@ -139,8 +151,10 @@ export function SetupRoute({ onSuccess }: SetupRouteProps) {
           }}
         >
           <section className="rounded-lg bg-white p-6 shadow-sm space-y-3">
-            <h2 className="text-lg font-semibold">Venue identity</h2>
-            <Field label="Venue name *">
+            <h2 className="text-lg font-semibold">
+              <Trans>Venue identity</Trans>
+            </h2>
+            <Field label={t`Venue name *`}>
               <input
                 className="mt-1 block w-full rounded border px-2 py-1"
                 value={form.venue_name}
@@ -148,14 +162,14 @@ export function SetupRoute({ onSuccess }: SetupRouteProps) {
                 required
               />
             </Field>
-            <Field label="Address">
+            <Field label={t`Address`}>
               <input
                 className="mt-1 block w-full rounded border px-2 py-1"
                 value={form.venue_address}
                 onChange={update("venue_address")}
               />
             </Field>
-            <Field label="Phone">
+            <Field label={t`Phone`}>
               <input
                 className="mt-1 block w-full rounded border px-2 py-1"
                 value={form.venue_phone}
@@ -163,7 +177,7 @@ export function SetupRoute({ onSuccess }: SetupRouteProps) {
               />
             </Field>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Currency *">
+              <Field label={t`Currency *`}>
                 <input
                   className="mt-1 block w-full rounded border px-2 py-1"
                   value={form.currency}
@@ -171,7 +185,7 @@ export function SetupRoute({ onSuccess }: SetupRouteProps) {
                   required
                 />
               </Field>
-              <Field label="Locale *">
+              <Field label={t`Locale *`}>
                 <input
                   className="mt-1 block w-full rounded border px-2 py-1"
                   value={form.locale}
@@ -180,14 +194,14 @@ export function SetupRoute({ onSuccess }: SetupRouteProps) {
                 />
               </Field>
             </div>
-            <Field label="Tax ID">
+            <Field label={t`Tax ID`}>
               <input
                 className="mt-1 block w-full rounded border px-2 py-1"
                 value={form.tax_id}
                 onChange={update("tax_id")}
               />
             </Field>
-            <Field label="Receipt footer">
+            <Field label={t`Receipt footer`}>
               <textarea
                 className="mt-1 block w-full rounded border px-2 py-1"
                 rows={2}
@@ -198,8 +212,10 @@ export function SetupRoute({ onSuccess }: SetupRouteProps) {
           </section>
 
           <section className="rounded-lg bg-white p-6 shadow-sm space-y-3">
-            <h2 className="text-lg font-semibold">Operational</h2>
-            <Field label="Business-day cutoff hour (0–23)">
+            <h2 className="text-lg font-semibold">
+              <Trans>Operational</Trans>
+            </h2>
+            <Field label={t`Business-day cutoff hour (0–23)`}>
               <input
                 className="mt-1 block w-full rounded border px-2 py-1"
                 inputMode="numeric"
@@ -208,7 +224,7 @@ export function SetupRoute({ onSuccess }: SetupRouteProps) {
                 required
               />
             </Field>
-            <Field label="Timezone offset (seconds, e.g. 25200 = +07:00)">
+            <Field label={t`Timezone offset (seconds, e.g. 25200 = +07:00)`}>
               <input
                 className="mt-1 block w-full rounded border px-2 py-1"
                 inputMode="numeric"
@@ -220,12 +236,16 @@ export function SetupRoute({ onSuccess }: SetupRouteProps) {
           </section>
 
           <section className="rounded-lg bg-white p-6 shadow-sm space-y-3">
-            <h2 className="text-lg font-semibold">Owner account</h2>
+            <h2 className="text-lg font-semibold">
+              <Trans>Owner account</Trans>
+            </h2>
             <p className="text-sm text-gray-600">
-              The Owner can sign into the cashier and the admin console. Choose
-              a PIN of at least 6 digits and keep it private.
+              <Trans>
+                The Owner can sign into the cashier and the admin console. Choose
+                a PIN of at least 6 digits and keep it private.
+              </Trans>
             </p>
-            <Field label="Owner name *">
+            <Field label={t`Owner name *`}>
               <input
                 className="mt-1 block w-full rounded border px-2 py-1"
                 value={form.owner_name}
@@ -234,7 +254,7 @@ export function SetupRoute({ onSuccess }: SetupRouteProps) {
               />
             </Field>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Owner PIN (min 6) *">
+              <Field label={t`Owner PIN (min 6) *`}>
                 <input
                   className="mt-1 block w-full rounded border px-2 py-1"
                   type="password"
@@ -245,7 +265,7 @@ export function SetupRoute({ onSuccess }: SetupRouteProps) {
                   required
                 />
               </Field>
-              <Field label="Confirm PIN *">
+              <Field label={t`Confirm PIN *`}>
                 <input
                   className="mt-1 block w-full rounded border px-2 py-1"
                   type="password"
@@ -264,7 +284,7 @@ export function SetupRoute({ onSuccess }: SetupRouteProps) {
           )}
           <div className="flex justify-end">
             <Button type="submit" disabled={submit.isPending}>
-              {submit.isPending ? "Saving…" : "Complete setup"}
+              {submit.isPending ? <Trans>Saving…</Trans> : <Trans>Complete setup</Trans>}
             </Button>
           </div>
         </form>
