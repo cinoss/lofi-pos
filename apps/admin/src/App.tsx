@@ -1,11 +1,14 @@
 import { Navigate, Route, Routes, Link, Outlet } from "react-router-dom";
-import { useAuth, LoginRoute, LockRoute } from "@lofi-pos/pos-ui";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useAuth, LoginRoute, LockRoute, useApiClient } from "@lofi-pos/pos-ui";
 import { Button } from "@lofi-pos/ui/components/button";
+import { SetupState } from "@lofi-pos/shared";
 import { SpotsRoute } from "./routes/spots";
 import { StaffRoute } from "./routes/staff";
 import { ProductsRoute } from "./routes/products";
 import { SettingsRoute } from "./routes/settings";
 import { ReportsRoute } from "./routes/reports";
+import { SetupRoute } from "./routes/setup";
 
 function AdminShell() {
   const { claims, logout } = useAuth();
@@ -63,7 +66,32 @@ function AdminShell() {
 }
 
 export default function App() {
+  const api = useApiClient();
+  const qc = useQueryClient();
+  const setupQ = useQuery({
+    queryKey: ["setup-state"],
+    queryFn: () => api.get("/admin/setup-state", SetupState),
+    refetchOnWindowFocus: true,
+  });
   const { isAuthenticated, isLocked, token } = useAuth();
+
+  if (setupQ.isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <p className="text-sm text-gray-500">Loading…</p>
+      </div>
+    );
+  }
+
+  if (setupQ.data?.needs_setup) {
+    return (
+      <SetupRoute
+        onSuccess={() => {
+          void qc.invalidateQueries({ queryKey: ["setup-state"] });
+        }}
+      />
+    );
+  }
 
   if (isLocked || (token && !isAuthenticated)) {
     return (

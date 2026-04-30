@@ -682,6 +682,21 @@ mod tests {
     }
 
     #[test]
+    fn venue_settings_seeded_with_defaults() {
+        let m = Master::open_in_memory().unwrap();
+        assert_eq!(m.get_setting("venue_name").unwrap().as_deref(), Some(""));
+        assert_eq!(m.get_setting("venue_address").unwrap().as_deref(), Some(""));
+        assert_eq!(m.get_setting("venue_phone").unwrap().as_deref(), Some(""));
+        assert_eq!(m.get_setting("currency").unwrap().as_deref(), Some("VND"));
+        assert_eq!(m.get_setting("locale").unwrap().as_deref(), Some("vi-VN"));
+        assert_eq!(m.get_setting("tax_id").unwrap().as_deref(), Some(""));
+        assert_eq!(
+            m.get_setting("receipt_footer").unwrap().as_deref(),
+            Some("")
+        );
+    }
+
+    #[test]
     fn setting_upsert() {
         let m = Master::open_in_memory().unwrap();
         m.set_setting("x", "1").unwrap();

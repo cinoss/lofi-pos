@@ -73,6 +73,10 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .merge(crate::http::routes::payment::router())
         .merge(crate::http::routes::ws::router())
         .merge(crate::http::routes::admin::router())
+        // Setup endpoints — UNAUTHENTICATED (chicken-and-egg: there's no Owner
+        // yet to authorize). Mounted on the same un-rated branch as the rest.
+        // Both handlers self-gate on `compute_needs_setup`.
+        .merge(crate::http::routes::setup::router())
         .with_state(state)
         // Admin SPA static mount. Lives at `/ui/admin/*`; `/admin/*` is the
         // JSON API. SPA fallback inside `static_admin::router` returns
