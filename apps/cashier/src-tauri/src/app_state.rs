@@ -22,6 +22,13 @@ pub struct Settings {
     pub cancel_grace_minutes: u32,
     pub idle_lock_minutes: u32,
     pub http_port: u16,
+    pub venue_name: String,
+    pub venue_address: String,
+    pub venue_phone: String,
+    pub currency: String,
+    pub locale: String,
+    pub tax_id: String,
+    pub receipt_footer: String,
 }
 
 impl Settings {
@@ -50,6 +57,19 @@ impl Settings {
             .get_setting("http_port")?
             .map(|s| s.parse().unwrap_or(7878))
             .unwrap_or(7878);
+        // Venue identity rows (added in 0009_venue_settings.sql). Defaults to
+        // empty string when missing so old DBs missing the migration don't
+        // hard-fail before we run it.
+        fn get_or_empty(master: &Master, key: &str) -> AppResult<String> {
+            Ok(master.get_setting(key)?.unwrap_or_default())
+        }
+        let venue_name = get_or_empty(master, "venue_name")?;
+        let venue_address = get_or_empty(master, "venue_address")?;
+        let venue_phone = get_or_empty(master, "venue_phone")?;
+        let currency = get_or_empty(master, "currency")?;
+        let locale = get_or_empty(master, "locale")?;
+        let tax_id = get_or_empty(master, "tax_id")?;
+        let receipt_footer = get_or_empty(master, "receipt_footer")?;
         Ok(Self {
             business_day_cutoff_hour: cutoff,
             business_day_tz: tz,
@@ -57,6 +77,13 @@ impl Settings {
             cancel_grace_minutes,
             idle_lock_minutes,
             http_port,
+            venue_name,
+            venue_address,
+            venue_phone,
+            currency,
+            locale,
+            tax_id,
+            receipt_footer,
         })
     }
 }
@@ -93,4 +120,22 @@ pub struct AppState {
     /// `/ui/admin/*`. May not exist (dev convenience): the static handler
     /// logs a warning and returns 404 in that case.
     pub admin_dist: PathBuf,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn settings_load_returns_default_venue_values_after_migration() {
+        let m = Master::open_in_memory().unwrap();
+        let s = Settings::load(&m).unwrap();
+        assert_eq!(s.venue_name, "");
+        assert_eq!(s.venue_address, "");
+        assert_eq!(s.venue_phone, "");
+        assert_eq!(s.currency, "VND");
+        assert_eq!(s.locale, "vi-VN");
+        assert_eq!(s.tax_id, "");
+        assert_eq!(s.receipt_footer, "");
+    }
 }

@@ -368,6 +368,13 @@ pub struct SettingsOut {
     pub discount_threshold_pct: u32,
     pub cancel_grace_minutes: u32,
     pub idle_lock_minutes: u32,
+    pub venue_name: String,
+    pub venue_address: String,
+    pub venue_phone: String,
+    pub currency: String,
+    pub locale: String,
+    pub tax_id: String,
+    pub receipt_footer: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -377,6 +384,30 @@ pub struct SettingsUpdate {
     pub discount_threshold_pct: Option<u32>,
     pub cancel_grace_minutes: Option<u32>,
     pub idle_lock_minutes: Option<u32>,
+    pub venue_name: Option<String>,
+    pub venue_address: Option<String>,
+    pub venue_phone: Option<String>,
+    pub currency: Option<String>,
+    pub locale: Option<String>,
+    pub tax_id: Option<String>,
+    pub receipt_footer: Option<String>,
+}
+
+fn settings_to_out(s: &crate::app_state::Settings) -> SettingsOut {
+    SettingsOut {
+        business_day_cutoff_hour: s.business_day_cutoff_hour,
+        business_day_tz_offset_seconds: s.business_day_tz.local_minus_utc(),
+        discount_threshold_pct: s.discount_threshold_pct,
+        cancel_grace_minutes: s.cancel_grace_minutes,
+        idle_lock_minutes: s.idle_lock_minutes,
+        venue_name: s.venue_name.clone(),
+        venue_address: s.venue_address.clone(),
+        venue_phone: s.venue_phone.clone(),
+        currency: s.currency.clone(),
+        locale: s.locale.clone(),
+        tax_id: s.tax_id.clone(),
+        receipt_footer: s.receipt_footer.clone(),
+    }
 }
 
 async fn get_settings(
@@ -388,13 +419,7 @@ async fn get_settings(
     let out = tokio::task::spawn_blocking(move || -> AppResult<SettingsOut> {
         let m = master.lock().unwrap();
         let s = crate::app_state::Settings::load(&m)?;
-        Ok(SettingsOut {
-            business_day_cutoff_hour: s.business_day_cutoff_hour,
-            business_day_tz_offset_seconds: s.business_day_tz.local_minus_utc(),
-            discount_threshold_pct: s.discount_threshold_pct,
-            cancel_grace_minutes: s.cancel_grace_minutes,
-            idle_lock_minutes: s.idle_lock_minutes,
-        })
+        Ok(settings_to_out(&s))
     })
     .await
     .map_err(|e| AppErrorResponse(AppError::Internal(format!("join: {e}"))))?
@@ -436,14 +461,29 @@ async fn update_settings(
         if let Some(v) = input.idle_lock_minutes {
             m.set_setting("idle_lock_minutes", &v.to_string())?;
         }
+        if let Some(ref v) = input.venue_name {
+            m.set_setting("venue_name", v)?;
+        }
+        if let Some(ref v) = input.venue_address {
+            m.set_setting("venue_address", v)?;
+        }
+        if let Some(ref v) = input.venue_phone {
+            m.set_setting("venue_phone", v)?;
+        }
+        if let Some(ref v) = input.currency {
+            m.set_setting("currency", v)?;
+        }
+        if let Some(ref v) = input.locale {
+            m.set_setting("locale", v)?;
+        }
+        if let Some(ref v) = input.tax_id {
+            m.set_setting("tax_id", v)?;
+        }
+        if let Some(ref v) = input.receipt_footer {
+            m.set_setting("receipt_footer", v)?;
+        }
         let s = crate::app_state::Settings::load(&m)?;
-        Ok(SettingsOut {
-            business_day_cutoff_hour: s.business_day_cutoff_hour,
-            business_day_tz_offset_seconds: s.business_day_tz.local_minus_utc(),
-            discount_threshold_pct: s.discount_threshold_pct,
-            cancel_grace_minutes: s.cancel_grace_minutes,
-            idle_lock_minutes: s.idle_lock_minutes,
-        })
+        Ok(settings_to_out(&s))
     })
     .await
     .map_err(|e| AppErrorResponse(AppError::Internal(format!("join: {e}"))))?

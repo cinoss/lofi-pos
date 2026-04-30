@@ -50,14 +50,6 @@ export const ProductInput = z
 export type ProductInput = z.infer<typeof ProductInput>;
 
 // ----------- Settings (admin update payload) -----------
-export const SettingsUpdate = z
-  .object({
-    business_day_cutoff_hour: z.number().int().min(0).max(23).optional(),
-    business_day_tz_offset_seconds: z.number().int().optional(),
-    discount_threshold_pct: z.number().int().optional(),
-    cancel_grace_minutes: z.number().int().optional(),
-    idle_lock_minutes: z.number().int().optional(),
-  })
-  .strict();
-export type SettingsUpdate = z.infer<typeof SettingsUpdate>;
+// `SettingsUpdate` is exported from ./settings.ts (derived from the canonical
+// Settings schema via `Settings.partial().strict()`).
 
