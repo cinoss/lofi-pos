@@ -15,7 +15,7 @@ fn open_session(store: &AggregateStore, agg: &str) {
             customer_label: None,
             team: None,
         },
-        ApplyCtx { aggregate_id: agg },
+        ApplyCtx { aggregate_id: agg, at_ms: 0 },
     )
     .unwrap();
 }
@@ -28,9 +28,7 @@ fn place_order(store: &AggregateStore, session_id: &str, order_id: &str, qty: i6
             order_id: order_id.into(),
             items: vec![item(1, qty, 1000)],
         },
-        ApplyCtx {
-            aggregate_id: order_id,
-        },
+        ApplyCtx { aggregate_id: order_id, at_ms: 0 },
     )
     .unwrap();
 }
@@ -45,7 +43,7 @@ fn double_close_rejected() {
             closed_by: 1,
             reason: None,
         },
-        ApplyCtx { aggregate_id: "s" },
+        ApplyCtx { aggregate_id: "s", at_ms: 0 },
     )
     .unwrap();
 
@@ -92,7 +90,7 @@ fn duplicate_payment_rejected() {
             total: 108,
             method: "cash".into(),
         },
-        ApplyCtx { aggregate_id: "s" },
+        ApplyCtx { aggregate_id: "s", at_ms: 0 },
     )
     .unwrap();
 

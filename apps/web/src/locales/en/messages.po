@@ -32,6 +32,12 @@ msgstr "🔒 Locked — Re-enter PIN"
 msgid "Bank transfer"
 msgstr "Bank transfer"
 
+#: ../../packages/pos-ui/src/components/transfer-modal.tsx
+#: ../../packages/pos-ui/src/routes/session-detail.tsx
+#: ../../packages/pos-ui/src/routes/session-detail.tsx
+msgid "Cancel"
+msgstr "Cancel"
+
 #: ../../packages/pos-ui/src/routes/payment.tsx
 msgid "Card"
 msgstr "Card"
@@ -61,6 +67,11 @@ msgstr "Error"
 msgid "Error: {0}"
 msgstr "Error: {0}"
 
+#: ../../packages/pos-ui/src/routes/payment.tsx
+msgid "Includes room time charge:"
+msgstr "Includes room time charge:"
+
+#: ../../packages/pos-ui/src/routes/session-detail.tsx
 #: ../../packages/pos-ui/src/routes/sessions.tsx
 #: ../../packages/pos-ui/src/routes/spot-picker.tsx
 msgid "Loading…"
@@ -78,9 +89,21 @@ msgstr "LoFi POS — Sign In"
 msgid "Logout"
 msgstr "Logout"
 
+#: ../../packages/pos-ui/src/routes/session-detail.tsx
+msgid "Max: {max}"
+msgstr "Max: {max}"
+
 #: ../../packages/pos-ui/src/routes/payment.tsx
 msgid "Method"
 msgstr "Method"
+
+#: ../../packages/pos-ui/src/components/transfer-modal.tsx
+msgid "Move to spot"
+msgstr "Move to spot"
+
+#: ../../packages/pos-ui/src/routes/session-detail.tsx
+msgid "Move…"
+msgstr "Move…"
 
 #: ../../packages/pos-ui/src/routes/login.tsx
 msgid "Network error"
@@ -89,6 +112,10 @@ msgstr "Network error"
 #: ../../packages/pos-ui/src/routes/sessions.tsx
 msgid "No active sessions."
 msgstr "No active sessions."
+
+#: ../../packages/pos-ui/src/components/transfer-modal.tsx
+msgid "No idle spots available."
+msgstr "No idle spots available."
 
 #: ../../packages/pos-ui/src/routes/spot-picker.tsx
 msgid "No idle spots."
@@ -106,13 +133,29 @@ msgstr "Open new session"
 msgid "Open new session →"
 msgstr "Open new session →"
 
+#: ../../packages/pos-ui/src/routes/session-detail.tsx
+msgid "Return"
+msgstr "Return"
+
+#: ../../packages/pos-ui/src/routes/session-detail.tsx
+msgid "Return how many?"
+msgstr "Return how many?"
+
 #: ../../packages/pos-ui/src/routes/sessions.tsx
 msgid "Room"
 msgstr "Room"
 
+#: ../../packages/pos-ui/src/components/room-clock.tsx
+msgid "Room time"
+msgstr "Room time"
+
 #: ../../packages/pos-ui/src/components/app-shell.tsx
 msgid "Sessions"
 msgstr "Sessions"
+
+#: ../../packages/pos-ui/src/routes/session-detail.tsx
+msgid "Submit"
+msgstr "Submit"
 
 #: ../../packages/pos-ui/src/routes/payment.tsx
 msgid "Subtotal (VND)"

@@ -18,6 +18,11 @@ pub struct SessionState {
     /// reproduces independently of the live `spot` master row.
     pub spot: SpotRef,
     pub opened_by: i64,
+    /// Wall-clock timestamp (ms since epoch) when the SessionOpened event was
+    /// appended. Surfaced so the UI can compute elapsed time for time-billed
+    /// (room) sessions without a separate query.
+    #[serde(default)]
+    pub opened_at_ms: i64,
     pub customer_label: Option<String>,
     pub team: Option<String>,
     /// Order ids placed under this session, including any inherited from
@@ -58,6 +63,11 @@ pub fn fold(session_id: &str, events: &[DomainEvent]) -> Option<SessionState> {
                     status: SessionStatus::Open,
                     spot: spot.clone(),
                     opened_by: *opened_by,
+                    // `fold` operates on raw DomainEvents without row metadata;
+                    // wall-clock `opened_at_ms` is captured by `apply` (which
+                    // has the EventRow ts) and by warm_up (which replays via
+                    // apply). Replays-from-fold therefore default to 0.
+                    opened_at_ms: 0,
                     customer_label: customer_label.clone(),
                     team: team.clone(),
                     order_ids: Vec::new(),

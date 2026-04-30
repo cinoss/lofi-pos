@@ -41,6 +41,12 @@ msgstr "Bank transfer"
 msgid "Business-day cutoff hour (0–23)"
 msgstr "Business-day cutoff hour (0–23)"
 
+#: ../../packages/pos-ui/src/components/transfer-modal.tsx
+#: ../../packages/pos-ui/src/routes/session-detail.tsx
+#: ../../packages/pos-ui/src/routes/session-detail.tsx
+msgid "Cancel"
+msgstr "Cancel"
+
 #: ../../packages/pos-ui/src/routes/payment.tsx
 msgid "Card"
 msgstr "Card"
@@ -90,6 +96,11 @@ msgstr "Error: {0}"
 msgid "First-time setup"
 msgstr "First-time setup"
 
+#: ../../packages/pos-ui/src/routes/payment.tsx
+msgid "Includes room time charge:"
+msgstr "Includes room time charge:"
+
+#: ../../packages/pos-ui/src/routes/session-detail.tsx
 #: ../../packages/pos-ui/src/routes/sessions.tsx
 #: ../../packages/pos-ui/src/routes/spot-picker.tsx
 #: src/App.tsx
@@ -118,9 +129,21 @@ msgstr "LoFi POS — Sign In"
 msgid "Logout"
 msgstr "Logout"
 
+#: ../../packages/pos-ui/src/routes/session-detail.tsx
+msgid "Max: {max}"
+msgstr "Max: {max}"
+
 #: ../../packages/pos-ui/src/routes/payment.tsx
 msgid "Method"
 msgstr "Method"
+
+#: ../../packages/pos-ui/src/components/transfer-modal.tsx
+msgid "Move to spot"
+msgstr "Move to spot"
+
+#: ../../packages/pos-ui/src/routes/session-detail.tsx
+msgid "Move…"
+msgstr "Move…"
 
 #: ../../packages/pos-ui/src/routes/login.tsx
 msgid "Network error"
@@ -129,6 +152,10 @@ msgstr "Network error"
 #: ../../packages/pos-ui/src/routes/sessions.tsx
 msgid "No active sessions."
 msgstr "No active sessions."
+
+#: ../../packages/pos-ui/src/components/transfer-modal.tsx
+msgid "No idle spots available."
+msgstr "No idle spots available."
 
 #: ../../packages/pos-ui/src/routes/spot-picker.tsx
 msgid "No idle spots."
@@ -186,6 +213,14 @@ msgstr "Receipt footer"
 msgid "Reports"
 msgstr "Reports"
 
+#: ../../packages/pos-ui/src/routes/session-detail.tsx
+msgid "Return"
+msgstr "Return"
+
+#: ../../packages/pos-ui/src/routes/session-detail.tsx
+msgid "Return how many?"
+msgstr "Return how many?"
+
 #: src/routes/setup.tsx
 msgid "Return to the cashier and click <0>I've finished setup</0> to continue. You can now also sign in to this admin console with the Owner PIN you just set."
 msgstr "Return to the cashier and click <0>I've finished setup</0> to continue. You can now also sign in to this admin console with the Owner PIN you just set."
@@ -193,6 +228,10 @@ msgstr "Return to the cashier and click <0>I've finished setup</0> to continue. 
 #: ../../packages/pos-ui/src/routes/sessions.tsx
 msgid "Room"
 msgstr "Room"
+
+#: ../../packages/pos-ui/src/components/room-clock.tsx
+msgid "Room time"
+msgstr "Room time"
 
 #: src/routes/setup.tsx
 msgid "Saving…"
@@ -221,6 +260,10 @@ msgstr "Spots"
 #: src/App.tsx
 msgid "Staff"
 msgstr "Staff"
+
+#: ../../packages/pos-ui/src/routes/session-detail.tsx
+msgid "Submit"
+msgstr "Submit"
 
 #: ../../packages/pos-ui/src/routes/payment.tsx
 msgid "Subtotal (VND)"

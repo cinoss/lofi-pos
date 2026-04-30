@@ -32,6 +32,12 @@ msgstr "🔒 Đã khóa — Nhập lại mã PIN"
 msgid "Bank transfer"
 msgstr "Chuyển khoản"
 
+#: ../../packages/pos-ui/src/components/transfer-modal.tsx
+#: ../../packages/pos-ui/src/routes/session-detail.tsx
+#: ../../packages/pos-ui/src/routes/session-detail.tsx
+msgid "Cancel"
+msgstr "Hủy"
+
 #: ../../packages/pos-ui/src/routes/payment.tsx
 msgid "Card"
 msgstr "Thẻ"
@@ -69,6 +75,11 @@ msgstr "Cần cài đặt lần đầu"
 msgid "I've finished setup"
 msgstr "Tôi đã hoàn tất"
 
+#: ../../packages/pos-ui/src/routes/payment.tsx
+msgid "Includes room time charge:"
+msgstr "Đã bao gồm tiền phòng:"
+
+#: ../../packages/pos-ui/src/routes/session-detail.tsx
 #: ../../packages/pos-ui/src/routes/sessions.tsx
 #: ../../packages/pos-ui/src/routes/spot-picker.tsx
 msgid "Loading…"
@@ -86,9 +97,21 @@ msgstr "LoFi POS — Đăng nhập"
 msgid "Logout"
 msgstr "Đăng xuất"
 
+#: ../../packages/pos-ui/src/routes/session-detail.tsx
+msgid "Max: {max}"
+msgstr "Tối đa: {max}"
+
 #: ../../packages/pos-ui/src/routes/payment.tsx
 msgid "Method"
 msgstr "Hình thức"
+
+#: ../../packages/pos-ui/src/components/transfer-modal.tsx
+msgid "Move to spot"
+msgstr "Chuyển sang bàn / phòng"
+
+#: ../../packages/pos-ui/src/routes/session-detail.tsx
+msgid "Move…"
+msgstr "Chuyển..."
 
 #: ../../packages/pos-ui/src/routes/login.tsx
 msgid "Network error"
@@ -97,6 +120,10 @@ msgstr "Lỗi mạng"
 #: ../../packages/pos-ui/src/routes/sessions.tsx
 msgid "No active sessions."
 msgstr "Không có phiên nào đang mở."
+
+#: ../../packages/pos-ui/src/components/transfer-modal.tsx
+msgid "No idle spots available."
+msgstr "Không có bàn / phòng trống."
 
 #: ../../packages/pos-ui/src/routes/spot-picker.tsx
 msgid "No idle spots."
@@ -118,9 +145,21 @@ msgstr "Mở phiên mới"
 msgid "Open new session →"
 msgstr "Mở phiên mới →"
 
+#: ../../packages/pos-ui/src/routes/session-detail.tsx
+msgid "Return"
+msgstr "Trả hàng"
+
+#: ../../packages/pos-ui/src/routes/session-detail.tsx
+msgid "Return how many?"
+msgstr "Trả lại bao nhiêu?"
+
 #: ../../packages/pos-ui/src/routes/sessions.tsx
 msgid "Room"
 msgstr "Phòng"
+
+#: ../../packages/pos-ui/src/components/room-clock.tsx
+msgid "Room time"
+msgstr "Thời gian phòng"
 
 #: src/routes/setup-required.tsx
 msgid "Scan to open setup on your phone or laptop"
@@ -129,6 +168,10 @@ msgstr "Quét để mở cài đặt trên điện thoại hoặc máy tính"
 #: ../../packages/pos-ui/src/components/app-shell.tsx
 msgid "Sessions"
 msgstr "Phiên"
+
+#: ../../packages/pos-ui/src/routes/session-detail.tsx
+msgid "Submit"
+msgstr "Gửi"
 
 #: ../../packages/pos-ui/src/routes/payment.tsx
 msgid "Subtotal (VND)"

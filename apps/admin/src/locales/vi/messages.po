@@ -41,6 +41,12 @@ msgstr "Chuyển khoản"
 msgid "Business-day cutoff hour (0–23)"
 msgstr "Giờ chốt ngày kinh doanh (0–23)"
 
+#: ../../packages/pos-ui/src/components/transfer-modal.tsx
+#: ../../packages/pos-ui/src/routes/session-detail.tsx
+#: ../../packages/pos-ui/src/routes/session-detail.tsx
+msgid "Cancel"
+msgstr "Hủy"
+
 #: ../../packages/pos-ui/src/routes/payment.tsx
 msgid "Card"
 msgstr "Thẻ"
@@ -90,6 +96,11 @@ msgstr "Lỗi: {0}"
 msgid "First-time setup"
 msgstr "Cài đặt lần đầu"
 
+#: ../../packages/pos-ui/src/routes/payment.tsx
+msgid "Includes room time charge:"
+msgstr "Đã bao gồm tiền phòng:"
+
+#: ../../packages/pos-ui/src/routes/session-detail.tsx
 #: ../../packages/pos-ui/src/routes/sessions.tsx
 #: ../../packages/pos-ui/src/routes/spot-picker.tsx
 #: src/App.tsx
@@ -118,9 +129,21 @@ msgstr "LoFi POS — Đăng nhập"
 msgid "Logout"
 msgstr "Đăng xuất"
 
+#: ../../packages/pos-ui/src/routes/session-detail.tsx
+msgid "Max: {max}"
+msgstr "Tối đa: {max}"
+
 #: ../../packages/pos-ui/src/routes/payment.tsx
 msgid "Method"
 msgstr "Hình thức"
+
+#: ../../packages/pos-ui/src/components/transfer-modal.tsx
+msgid "Move to spot"
+msgstr "Chuyển sang bàn / phòng"
+
+#: ../../packages/pos-ui/src/routes/session-detail.tsx
+msgid "Move…"
+msgstr "Chuyển..."
 
 #: ../../packages/pos-ui/src/routes/login.tsx
 msgid "Network error"
@@ -129,6 +152,10 @@ msgstr "Lỗi mạng"
 #: ../../packages/pos-ui/src/routes/sessions.tsx
 msgid "No active sessions."
 msgstr "Không có phiên nào đang mở."
+
+#: ../../packages/pos-ui/src/components/transfer-modal.tsx
+msgid "No idle spots available."
+msgstr "Không có bàn / phòng trống."
 
 #: ../../packages/pos-ui/src/routes/spot-picker.tsx
 msgid "No idle spots."
@@ -186,6 +213,14 @@ msgstr "Chân hóa đơn"
 msgid "Reports"
 msgstr "Báo cáo"
 
+#: ../../packages/pos-ui/src/routes/session-detail.tsx
+msgid "Return"
+msgstr "Trả hàng"
+
+#: ../../packages/pos-ui/src/routes/session-detail.tsx
+msgid "Return how many?"
+msgstr "Trả lại bao nhiêu?"
+
 #: src/routes/setup.tsx
 msgid "Return to the cashier and click <0>I've finished setup</0> to continue. You can now also sign in to this admin console with the Owner PIN you just set."
 msgstr "Quay lại máy thu ngân và bấm <0>Tôi đã hoàn tất</0> để tiếp tục. Bạn cũng có thể đăng nhập vào bảng quản trị này bằng mã PIN chủ vừa đặt."
@@ -193,6 +228,10 @@ msgstr "Quay lại máy thu ngân và bấm <0>Tôi đã hoàn tất</0> để t
 #: ../../packages/pos-ui/src/routes/sessions.tsx
 msgid "Room"
 msgstr "Phòng"
+
+#: ../../packages/pos-ui/src/components/room-clock.tsx
+msgid "Room time"
+msgstr "Thời gian phòng"
 
 #: src/routes/setup.tsx
 msgid "Saving…"
@@ -221,6 +260,10 @@ msgstr "Bàn / Phòng"
 #: src/App.tsx
 msgid "Staff"
 msgstr "Nhân viên"
+
+#: ../../packages/pos-ui/src/routes/session-detail.tsx
+msgid "Submit"
+msgstr "Gửi"
 
 #: ../../packages/pos-ui/src/routes/payment.tsx
 msgid "Subtotal (VND)"
