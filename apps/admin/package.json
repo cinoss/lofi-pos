@@ -7,9 +7,14 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc -b"
+    "typecheck": "tsc -b",
+    "i18n:extract": "lingui extract --overwrite",
+    "i18n:compile": "lingui compile --typescript"
   },
   "dependencies": {
+    "@lingui/core": "^5.9.3",
+    "@lingui/format-po": "^5.9.3",
+    "@lingui/react": "^5.9.3",
     "@lofi-pos/pos-ui": "workspace:*",
     "@lofi-pos/shared": "workspace:*",
     "@lofi-pos/ui": "workspace:*",
@@ -20,6 +25,9 @@
     "zod": "^3.23.0"
   },
   "devDependencies": {
+    "@lingui/cli": "^5.9.3",
+    "@lingui/macro": "^5.9.3",
+    "babel-plugin-macros": "^3.1.0",
     "@tailwindcss/vite": "^4.1.18",
     "@types/react": "^19.2.10",
     "@types/react-dom": "^19.2.3",
