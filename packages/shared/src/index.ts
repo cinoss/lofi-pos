@@ -6,6 +6,7 @@ export * from "./schemas/order";
 export * from "./schemas/payment";
 export * from "./schemas/catalog";
 export * from "./schemas/settings";
+export * from "./schemas/setup";
 export * from "./schemas/admin";
 export * from "./schemas/bouncer";
 export * from "./client";
