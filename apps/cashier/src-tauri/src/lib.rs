@@ -11,6 +11,7 @@ pub mod eod;
 pub mod error;
 pub mod http;
 pub mod keychain;
+pub mod net;
 pub mod print;
 pub mod services;
 pub mod store;

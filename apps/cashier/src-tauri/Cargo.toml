@@ -55,6 +55,9 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "blo
 blake3 = "1"
 hex = "0.4"
 
+# Networking helpers
+if-addrs = "0.13"
+
 [dev-dependencies]
 anyhow = "1"
 proptest = "1"
