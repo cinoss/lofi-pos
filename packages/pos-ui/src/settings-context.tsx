@@ -1,4 +1,4 @@
-import { createContext, useContext } from "react";
+import { createContext, useContext, useEffect } from "react";
 import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { ApiClient } from "@lofi-pos/shared";
@@ -11,9 +11,11 @@ const SettingsContext = createContext<SettingsType | null>(null);
 export function SettingsProvider({
   client,
   children,
+  onLoaded,
 }: {
   client: ApiClient;
   children: ReactNode;
+  onLoaded?: (settings: SettingsType) => void;
 }) {
   const { isAuthenticated } = useAuth();
   const { data } = useQuery({
@@ -22,6 +24,9 @@ export function SettingsProvider({
     enabled: isAuthenticated,
     staleTime: 5 * 60 * 1000,
   });
+  useEffect(() => {
+    if (data) onLoaded?.(data);
+  }, [data, onLoaded]);
   return (
     <SettingsContext.Provider value={data ?? null}>
       {children}

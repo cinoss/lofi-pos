@@ -12,9 +12,14 @@
     "tauri:dev": "pnpm run build:sidecars && tauri dev",
     "tauri:build": "pnpm --filter @lofi-pos/admin build && pnpm run build:sidecars && tauri build",
     "typecheck": "tsc -b",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "i18n:extract": "lingui extract --overwrite",
+    "i18n:compile": "lingui compile --typescript"
   },
   "dependencies": {
+    "@lingui/core": "^5.9.3",
+    "@lingui/format-po": "^5.9.3",
+    "@lingui/react": "^5.9.3",
     "@lofi-pos/pos-ui": "workspace:*",
     "@lofi-pos/shared": "workspace:*",
     "@lofi-pos/ui": "workspace:*",
@@ -27,6 +32,9 @@
     "zod": "^3.23.0"
   },
   "devDependencies": {
+    "@lingui/cli": "^5.9.3",
+    "@lingui/macro": "^5.9.3",
+    "babel-plugin-macros": "^3.1.0",
     "@tailwindcss/vite": "^4.1.18",
     "@tauri-apps/cli": "^2.0.0",
     "@types/react": "^19.2.10",
