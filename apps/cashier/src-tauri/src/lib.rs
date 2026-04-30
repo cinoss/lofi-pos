@@ -30,6 +30,7 @@ const DEFAULT_BOUNCER_READY_TIMEOUT_SECS: u64 = 30;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let data_dir = app
                 .path()

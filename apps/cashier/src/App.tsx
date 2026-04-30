@@ -9,9 +9,25 @@ import {
   SessionDetailRoute,
   PaymentRoute,
 } from "@lofi-pos/pos-ui";
+import { useSetupState } from "./lib/setup";
+import { SetupRequiredRoute } from "./routes/setup-required";
 
 export default function App() {
+  const setupQ = useSetupState();
   const { isAuthenticated, isLocked, token } = useAuth();
+
+  // Block every other branch until we know whether the venue is configured.
+  if (setupQ.isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <p className="text-sm text-gray-500">Loading…</p>
+      </div>
+    );
+  }
+
+  if (setupQ.data?.needs_setup) {
+    return <SetupRequiredRoute />;
+  }
 
   // Lock screen wins if either: explicitly locked, or we have a token but
   // /auth/me hasn't (re)hydrated claims yet (or failed). The auth-context
