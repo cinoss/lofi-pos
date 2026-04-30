@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { t } from "@lingui/core/macro";
 import { ApiError } from "@lofi-pos/shared";
 import { PinPad } from "../components/pin-pad";
 import { useAuth } from "../auth-context";
@@ -19,11 +20,11 @@ export function LoginRoute() {
     } catch (e) {
       if (e instanceof ApiError) {
         if (e.code === "rate_limited")
-          setError("Too many attempts. Try again in a minute.");
-        else if (e.isUnauthorized()) setError("Wrong PIN");
+          setError(t`Too many attempts. Try again in a minute.`);
+        else if (e.isUnauthorized()) setError(t`Wrong PIN`);
         else setError(e.message);
       } else {
-        setError("Network error");
+        setError(t`Network error`);
       }
     } finally {
       setBusy(false);
@@ -33,7 +34,7 @@ export function LoginRoute() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-50">
       <PinPad
-        title="LoFi POS — Sign In"
+        title={t`LoFi POS — Sign In`}
         onSubmit={onSubmit}
         error={error}
         disabled={busy}
