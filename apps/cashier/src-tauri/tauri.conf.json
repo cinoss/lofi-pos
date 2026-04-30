@@ -21,6 +21,7 @@
     "icon": ["icons/icon.png"],
     "resources": {
       "../../admin/dist": "admin/dist"
-    }
+    },
+    "externalBin": ["binaries/bouncer-mock"]
   }
 }

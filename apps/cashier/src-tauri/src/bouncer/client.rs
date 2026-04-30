@@ -22,6 +22,7 @@
 
 use crate::error::{AppError, AppResult};
 use serde::Deserialize;
+use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct SeedRow {
@@ -59,6 +60,37 @@ impl BouncerClient {
     }
 
     // ---- blocking variants (startup / CLI / sync tests only) -----------
+
+    /// Poll `GET /health` with exponential backoff (200ms → 2s cap) until
+    /// the bouncer answers 200 OK or the timeout elapses. Used at startup
+    /// after spawning the sidecar to make sure it has bound its port
+    /// before we try to fetch seeds.
+    pub fn wait_for_ready_blocking(&self, timeout: Duration) -> AppResult<()> {
+        let start = Instant::now();
+        let mut delay = Duration::from_millis(200);
+        loop {
+            match self.health_blocking() {
+                Ok(()) => return Ok(()),
+                Err(e) => {
+                    if start.elapsed() >= timeout {
+                        return Err(AppError::Internal(format!(
+                            "bouncer not ready after {}s: {e}",
+                            timeout.as_secs()
+                        )));
+                    }
+                    std::thread::sleep(delay);
+                    delay = (delay * 2).min(Duration::from_secs(2));
+                }
+            }
+        }
+    }
+
+    /// Async wrapper around [`Self::wait_for_ready_blocking`]. Safe to call
+    /// from a tokio context (the blocking poll runs on the blocking pool).
+    pub async fn wait_for_ready(&self, timeout: Duration) -> AppResult<()> {
+        let me = self.clone();
+        spawn_blocking_result(move || me.wait_for_ready_blocking(timeout)).await
+    }
 
     pub fn health_blocking(&self) -> AppResult<()> {
         let r = self
@@ -278,6 +310,59 @@ mod tests {
             .unwrap();
         tokio::task::spawn_blocking(move || drop(client)).await.unwrap();
         let _ = shutdown.send(());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn wait_for_ready_succeeds_once_endpoint_appears() {
+        // Bind the listener immediately, but only start serving /health
+        // after a short delay — wait_for_ready should keep polling and
+        // succeed within the timeout.
+        let listener = tokio::net::TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], 0)))
+            .await
+            .unwrap();
+        let addr = listener.local_addr().unwrap();
+        let base = format!("http://{addr}");
+        let (tx, rx) = tokio::sync::oneshot::channel::<()>();
+
+        tokio::spawn(async move {
+            // Delay before accepting/serving so the first few /health
+            // probes from wait_for_ready fail with a connection error.
+            tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+            let app = axum::Router::new().route(
+                "/health",
+                get(|| async { Json(serde_json::json!({"ok": true})) }),
+            );
+            let _ = axum::serve(listener, app)
+                .with_graceful_shutdown(async move {
+                    let _ = rx.await;
+                })
+                .await;
+        });
+
+        let result = tokio::task::spawn_blocking(move || {
+            let client = BouncerClient::new(base);
+            client.wait_for_ready_blocking(std::time::Duration::from_secs(5))
+        })
+        .await
+        .unwrap();
+        assert!(result.is_ok(), "wait_for_ready should succeed: {result:?}");
+        let _ = tx.send(());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn wait_for_ready_times_out_when_unreachable() {
+        let result = tokio::task::spawn_blocking(|| {
+            // Port 1 is reserved/closed; connect attempts fail fast.
+            let client = BouncerClient::new("http://127.0.0.1:1");
+            client.wait_for_ready_blocking(std::time::Duration::from_millis(500))
+        })
+        .await
+        .unwrap();
+        let err = result.expect_err("wait_for_ready must time out");
+        assert!(
+            err.to_string().contains("bouncer not ready"),
+            "unexpected error: {err}"
+        );
     }
 
     #[tokio::test(flavor = "multi_thread")]

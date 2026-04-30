@@ -6,3 +6,6 @@ src-tauri/gen/
 vite.config.js
 vite.config.d.ts
 .tsbuild-node/
+
+# Tauri sidecar binaries built locally by scripts/build-sidecars.{sh,ps1}
+src-tauri/binaries/
