@@ -16,11 +16,13 @@ import type {
   CloseSessionInput,
   CancelOrderItemInput,
   ReturnOrderItemInput,
+  TransferSessionInput,
 } from "@lofi-pos/shared";
 import { Button } from "@lofi-pos/ui/components/button";
 import { useApiClient } from "../api-context";
 import { OverrideModal } from "../components/override-modal";
 import { RoomClock } from "../components/room-clock";
+import { TransferModal } from "../components/transfer-modal";
 
 /** UI-side identity for a specific order line, used to drive cancel/return modals. */
 interface ItemRef {
@@ -33,7 +35,8 @@ interface ItemRef {
 /** Captured when a mutation fires `override_required`; replays the action with the supplied PIN. */
 type PendingOverride =
   | { kind: "cancel"; ref: ItemRef; role: string }
-  | { kind: "return"; ref: ItemRef; qty: number; role: string };
+  | { kind: "return"; ref: ItemRef; qty: number; role: string }
+  | { kind: "transfer"; toSpotId: number; role: string };
 
 export function SessionDetailRoute() {
   const apiClient = useApiClient();
@@ -128,6 +131,7 @@ export function SessionDetailRoute() {
   const [pendingOverride, setPendingOverride] =
     useState<PendingOverride | null>(null);
   const [returnPrompt, setReturnPrompt] = useState<ItemRef | null>(null);
+  const [showTransfer, setShowTransfer] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
   const cancelItem = useMutation({
@@ -206,6 +210,40 @@ export function SessionDetailRoute() {
     },
   });
 
+  const transfer = useMutation({
+    mutationFn: async (vars: { toSpotId: number; override?: string }) => {
+      const input: TransferSessionInput = {
+        idempotency_key: crypto.randomUUID(),
+        to_spot_id: vars.toSpotId,
+        ...(vars.override ? { override_pin: vars.override } : {}),
+      };
+      return apiClient.post(
+        `/sessions/${sessionId}/transfer`,
+        SessionState,
+        input,
+      );
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["session", sessionId] });
+      qc.invalidateQueries({ queryKey: ["sessions", "active"] });
+      qc.invalidateQueries({ queryKey: ["spots"] });
+      setShowTransfer(false);
+      setPendingOverride(null);
+      setActionError(null);
+    },
+    onError: (e: unknown, vars) => {
+      if (e instanceof ApiError && e.code === "override_required") {
+        setPendingOverride({
+          kind: "transfer",
+          toSpotId: vars.toSpotId,
+          role: e.envelope.message ?? "manager",
+        });
+      } else if (e instanceof ApiError) {
+        setActionError(e.message);
+      }
+    },
+  });
+
   const submitOverride = async (pin: string) => {
     if (!pendingOverride) return;
     if (pendingOverride.kind === "cancel") {
@@ -213,10 +251,15 @@ export function SessionDetailRoute() {
         ref: pendingOverride.ref,
         override: pin,
       });
-    } else {
+    } else if (pendingOverride.kind === "return") {
       await returnItem.mutateAsync({
         ref: pendingOverride.ref,
         qty: pendingOverride.qty,
+        override: pin,
+      });
+    } else {
+      await transfer.mutateAsync({
+        toSpotId: pendingOverride.toSpotId,
         override: pin,
       });
     }
@@ -336,6 +379,13 @@ export function SessionDetailRoute() {
           >
             Close session
           </Button>
+          <Button
+            variant="outline"
+            onClick={() => setShowTransfer(true)}
+            disabled={transfer.isPending || session.status !== "Open"}
+          >
+            <Trans>Move…</Trans>
+          </Button>
         </div>
         {closeSession.error instanceof ApiError && (
           <div className="text-red-600 text-sm mt-2">
@@ -410,6 +460,15 @@ export function SessionDetailRoute() {
           onSubmit={(qty) =>
             returnItem.mutate({ ref: returnPrompt, qty })
           }
+        />
+      )}
+
+      {showTransfer && (
+        <TransferModal
+          currentSpotId={session.spot.id}
+          busy={transfer.isPending}
+          onClose={() => setShowTransfer(false)}
+          onSelect={(toSpotId) => transfer.mutate({ toSpotId })}
         />
       )}
 

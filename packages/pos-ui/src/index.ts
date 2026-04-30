@@ -9,6 +9,7 @@ export * from "./components/override-modal";
 export * from "./components/app-shell";
 export * from "./components/connection-status";
 export * from "./components/room-clock";
+export * from "./components/transfer-modal";
 export * from "./routes/login";
 export * from "./routes/lock";
 export * from "./routes/sessions";
