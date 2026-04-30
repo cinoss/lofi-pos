@@ -18,10 +18,17 @@ pub mod time;
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use tauri::Manager;
+use tauri_plugin_shell::ShellExt;
+
+/// Default timeout for the bouncer-sidecar `/health` wait at startup.
+/// Override with `LOFI_BOUNCER_READY_TIMEOUT_SECS`.
+const DEFAULT_BOUNCER_READY_TIMEOUT_SECS: u64 = 30;
 
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_shell::init())
         .setup(|app| {
             let data_dir = app
                 .path()
@@ -44,19 +51,45 @@ pub fn run() {
             // Bouncer init — cashier hard-fails if bouncer is unreachable or
             // returns no usable seeds. The bouncer (separate service) owns its
             // own internal fallback; whatever it returns is what we use.
+            //
+            // Spawn bouncer-mock as a Tauri sidecar so it ships with the app
+            // and is killed automatically when Tauri exits. Then poll its
+            // /health endpoint until it has bound its port (or we time out)
+            // before proceeding to fetch seeds.
             let bouncer_url = std::env::var("LOFI_BOUNCER_URL")
                 .unwrap_or_else(|_| "http://127.0.0.1:7879".into());
+
+            let sidecar_cmd = app
+                .shell()
+                .sidecar("bouncer-mock")
+                .map_err(|e| crate::error::AppError::Config(format!("bouncer sidecar lookup: {e}")))?;
+            let (_rx, _child) = sidecar_cmd
+                .spawn()
+                .map_err(|e| crate::error::AppError::Config(format!("bouncer sidecar spawn: {e}")))?;
+            tracing::info!("bouncer-mock sidecar spawned");
+
             let bouncer = Arc::new(bouncer::client::BouncerClient::new(bouncer_url));
-            if let Err(e) = bouncer.health_blocking() {
-                tracing::warn!(error = %e, "bouncer health probe failed; will attempt seed fetch anyway");
+
+            let ready_timeout_secs = std::env::var("LOFI_BOUNCER_READY_TIMEOUT_SECS")
+                .ok()
+                .and_then(|s| s.parse::<u64>().ok())
+                .unwrap_or(DEFAULT_BOUNCER_READY_TIMEOUT_SECS);
+            if let Err(e) = bouncer.wait_for_ready_blocking(Duration::from_secs(ready_timeout_secs)) {
+                eprintln!(
+                    "fatal: bouncer sidecar did not become ready within {ready_timeout_secs}s ({e})"
+                );
+                tracing::error!(error = %e, "bouncer sidecar not ready; aborting startup");
+                std::process::exit(1);
             }
+            tracing::info!("bouncer sidecar reported healthy");
+
             let seed_cache = match bouncer::seed_cache::SeedCache::fetch(&bouncer) {
                 Ok(c) => Arc::new(c),
                 Err(e) => {
                     eprintln!(
-                        "fatal: bouncer not reachable; start bouncer service first ({e})"
+                        "fatal: bouncer seed fetch failed after sidecar reported healthy ({e})"
                     );
-                    tracing::error!(error = %e, "bouncer not reachable; aborting startup");
+                    tracing::error!(error = %e, "bouncer seed fetch failed; aborting startup");
                     std::process::exit(1);
                 }
             };
