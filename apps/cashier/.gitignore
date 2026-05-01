@@ -9,3 +9,4 @@ vite.config.d.ts
 
 # Tauri sidecar binaries built locally by scripts/build-sidecars.{sh,ps1}
 src-tauri/binaries/
+apps/cashier/src-tauri/tmp/
