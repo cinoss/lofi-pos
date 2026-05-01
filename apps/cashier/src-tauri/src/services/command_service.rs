@@ -96,6 +96,17 @@ impl CommandService {
         // Per-aggregate validate-write-apply serialization.
         let _agg_guard = self.agg_lock.lock(aggregate_id.to_string());
 
+        // For SessionOpened, also serialize on the spot id so two concurrent
+        // opens for the same spot can't both pass the spot-occupancy check
+        // (different aggregate_ids → different agg_guards → race window
+        // without this).
+        let _spot_guard = match &event {
+            crate::domain::event::DomainEvent::SessionOpened { spot, .. } => {
+                Some(self.agg_lock.lock(format!("spot:{}", spot.id())))
+            }
+            _ => None,
+        };
+
         // Validate against in-memory state.
         validation::validate(&self.store, aggregate_id, &event)?;
 

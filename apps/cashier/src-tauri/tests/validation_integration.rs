@@ -129,3 +129,153 @@ fn return_item_oob_rejected() {
     };
     assert!(validate(&store, "o", &oob).is_err());
 }
+
+#[test]
+fn second_open_on_same_spot_rejected_while_first_open() {
+    let store = AggregateStore::new();
+    open_session(&store, "s1");
+
+    let second = DomainEvent::SessionOpened {
+        spot: room(1), // same spot id as the first
+        opened_by: 2,
+        customer_label: None,
+        team: None,
+    };
+    let res = validate(&store, "s2", &second);
+    assert!(res.is_err(), "expected conflict, got {res:?}");
+}
+
+#[test]
+fn open_on_same_spot_allowed_after_first_closed() {
+    let store = AggregateStore::new();
+    open_session(&store, "s1");
+    apply(
+        &store,
+        &DomainEvent::SessionClosed {
+            closed_by: 1,
+            reason: None,
+        },
+        ApplyCtx { aggregate_id: "s1", at_ms: 0 },
+    )
+    .unwrap();
+
+    let second = DomainEvent::SessionOpened {
+        spot: room(1),
+        opened_by: 2,
+        customer_label: None,
+        team: None,
+    };
+    assert!(validate(&store, "s2", &second).is_ok());
+}
+
+#[test]
+fn open_on_different_spot_allowed_while_first_open() {
+    let store = AggregateStore::new();
+    open_session(&store, "s1");
+    let second = DomainEvent::SessionOpened {
+        spot: room(2), // different spot
+        opened_by: 2,
+        customer_label: None,
+        team: None,
+    };
+    assert!(validate(&store, "s2", &second).is_ok());
+}
+
+fn open_session_at(store: &AggregateStore, agg: &str, spot_id: i64) {
+    apply(
+        store,
+        &DomainEvent::SessionOpened {
+            spot: room(spot_id),
+            opened_by: 1,
+            customer_label: None,
+            team: None,
+        },
+        ApplyCtx { aggregate_id: agg, at_ms: 0 },
+    )
+    .unwrap();
+}
+
+#[test]
+fn transfer_to_occupied_spot_rejected() {
+    let store = AggregateStore::new();
+    open_session_at(&store, "s1", 1);
+    open_session_at(&store, "s2", 2);
+    // Try to move s2 onto spot 1, which s1 still occupies
+    let mv = DomainEvent::SessionTransferred {
+        from: room(2),
+        to: room(1),
+    };
+    let res = validate(&store, "s2", &mv);
+    assert!(res.is_err(), "expected conflict, got {res:?}");
+}
+
+#[test]
+fn transfer_to_idle_spot_allowed() {
+    let store = AggregateStore::new();
+    open_session_at(&store, "s1", 1);
+    let mv = DomainEvent::SessionTransferred {
+        from: room(1),
+        to: room(2),
+    };
+    assert!(validate(&store, "s1", &mv).is_ok());
+}
+
+#[test]
+fn order_placed_on_closed_session_rejected() {
+    let store = AggregateStore::new();
+    open_session(&store, "s");
+    apply(
+        &store,
+        &DomainEvent::SessionClosed {
+            closed_by: 1,
+            reason: None,
+        },
+        ApplyCtx { aggregate_id: "s", at_ms: 0 },
+    )
+    .unwrap();
+
+    let place = DomainEvent::OrderPlaced {
+        session_id: "s".into(),
+        order_id: "o".into(),
+        items: vec![item(1, 1, 1000)],
+    };
+    let res = validate(&store, "o", &place);
+    assert!(res.is_err(), "expected conflict, got {res:?}");
+}
+
+#[test]
+fn order_placed_on_unknown_session_rejected() {
+    let store = AggregateStore::new();
+    let place = DomainEvent::OrderPlaced {
+        session_id: "ghost".into(),
+        order_id: "o".into(),
+        items: vec![item(1, 1, 1000)],
+    };
+    let res = validate(&store, "o", &place);
+    assert!(res.is_err(), "expected validation error, got {res:?}");
+}
+
+#[test]
+fn order_placed_on_open_session_allowed() {
+    let store = AggregateStore::new();
+    open_session(&store, "s");
+    let place = DomainEvent::OrderPlaced {
+        session_id: "s".into(),
+        order_id: "o".into(),
+        items: vec![item(1, 1, 1000)],
+    };
+    assert!(validate(&store, "o", &place).is_ok());
+}
+
+#[test]
+fn merge_with_target_in_sources_rejected() {
+    let store = AggregateStore::new();
+    open_session_at(&store, "t", 1);
+    open_session_at(&store, "x", 2);
+    let merge = DomainEvent::SessionMerged {
+        into_session: "t".into(),
+        sources: vec!["t".into(), "x".into()], // target appears in sources
+    };
+    let res = validate(&store, "t", &merge);
+    assert!(res.is_err(), "expected validation error, got {res:?}");
+}

@@ -23,7 +23,7 @@ pub fn validate(store: &AggregateStore, aggregate_id: &str, ev: &DomainEvent) ->
                 )));
             }
         }
-        DomainEvent::SessionTransferred { .. } => {
+        DomainEvent::SessionTransferred { to, .. } => {
             let s = store
                 .sessions
                 .get(aggregate_id)
@@ -32,6 +32,20 @@ pub fn validate(store: &AggregateStore, aggregate_id: &str, ev: &DomainEvent) ->
                 return Err(AppError::Conflict(format!(
                     "session {aggregate_id} status {:?}, cannot transfer",
                     s.status
+                )));
+            }
+            // Reject if any OTHER currently-Open session occupies the target spot.
+            let target_spot_id = to.id();
+            drop(s);
+            let conflict = store.sessions.iter().find(|entry| {
+                entry.key() != aggregate_id
+                    && entry.value().status == SessionStatus::Open
+                    && entry.value().spot.id() == target_spot_id
+            });
+            if let Some(entry) = conflict {
+                return Err(AppError::Conflict(format!(
+                    "spot {target_spot_id} already has an open session ({})",
+                    entry.key()
                 )));
             }
         }
@@ -47,6 +61,12 @@ pub fn validate(store: &AggregateStore, aggregate_id: &str, ev: &DomainEvent) ->
                 )));
             }
             drop(target);
+            // Target must not appear in its own sources.
+            if sources.iter().any(|s| s == aggregate_id) {
+                return Err(AppError::Validation(format!(
+                    "merge target {aggregate_id} cannot also be a source"
+                )));
+            }
             for src in sources {
                 let src_state = store
                     .sessions
@@ -131,9 +151,35 @@ pub fn validate(store: &AggregateStore, aggregate_id: &str, ev: &DomainEvent) ->
                 )));
             }
         }
-        // SessionOpened / OrderPlaced / catalog events have no pre-state invariants
-        // to enforce here; their command handlers carry richer per-input checks.
-        _ => {}
+        DomainEvent::OrderPlaced { session_id, .. } => {
+            let s = store
+                .sessions
+                .get(session_id)
+                .ok_or_else(|| AppError::Validation(format!("session {session_id} not opened")))?;
+            if s.status != SessionStatus::Open {
+                return Err(AppError::Conflict(format!(
+                    "session {session_id} status {:?}, cannot place order",
+                    s.status
+                )));
+            }
+        }
+        DomainEvent::SessionOpened { spot, .. } => {
+            // Reject if any currently-Open session occupies the same spot.
+            // Race-safety: CommandService takes a spot-keyed lock for SessionOpened
+            // (in addition to the per-aggregate lock) so concurrent opens for the
+            // same spot serialize through this check.
+            let target_spot_id = spot.id();
+            let conflict = store.sessions.iter().find(|entry| {
+                entry.value().status == SessionStatus::Open
+                    && entry.value().spot.id() == target_spot_id
+            });
+            if let Some(entry) = conflict {
+                return Err(AppError::Conflict(format!(
+                    "spot {target_spot_id} already has an open session ({})",
+                    entry.key()
+                )));
+            }
+        }
     }
     Ok(())
 }

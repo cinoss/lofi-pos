@@ -231,6 +231,9 @@ fn item(product_id: i64, qty: i64, unit_price: i64) -> OrderItemSpec {
 pub fn place_test_order(rig: &EodRig) -> (String, String) {
     let session_id = Uuid::new_v4().to_string();
     let order_id = Uuid::new_v4().to_string();
+    // Each test session gets a unique spot id so multiple test sessions
+    // don't collide on the spot-occupancy validation.
+    let spot_id = (Uuid::new_v4().as_u128() as i64).abs() % 1_000_000 + 1;
     let cs = &rig.state.commands;
     cs.execute(
         &rig.owner,
@@ -240,7 +243,7 @@ pub fn place_test_order(rig: &EodRig) -> (String, String) {
         "open_session",
         &session_id,
         DomainEvent::SessionOpened {
-            spot: room(1),
+            spot: room(spot_id),
             opened_by: rig.owner.staff_id,
             customer_label: None,
             team: None,

@@ -1,0 +1,11 @@
+{
+  "business_day": "2026-05-01",
+  "generated_at": 1777611209038,
+  "report": {
+    "business_day": "2026-05-01",
+    "generated_at": 1777611209036,
+    "orders": [],
+    "payments": [],
+    "sessions": []
+  }
+}
