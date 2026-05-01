@@ -37,6 +37,7 @@ pub fn apply(store: &AggregateStore, event: &DomainEvent, ctx: ApplyCtx<'_>) -> 
                     customer_label: customer_label.clone(),
                     team: team.clone(),
                     order_ids: Vec::new(),
+                    payment_taken: false,
                 },
             );
         }
@@ -142,6 +143,9 @@ pub fn apply(store: &AggregateStore, event: &DomainEvent, ctx: ApplyCtx<'_>) -> 
                     method: method.clone(),
                 },
             );
+            if let Some(mut s) = store.sessions.get_mut(session_id) {
+                s.payment_taken = true;
+            }
         }
     }
     Ok(())
@@ -372,6 +376,27 @@ mod tests {
         .unwrap();
         let p = s.payments.get("sess").unwrap();
         assert_eq!(p.total, 108);
+    }
+
+    #[test]
+    fn payment_taken_flips_session_payment_taken_flag() {
+        let s = AggregateStore::new();
+        apply(&s, &opened(1), ApplyCtx { aggregate_id: "sess", at_ms: 0 }).unwrap();
+        assert!(!s.sessions.get("sess").unwrap().payment_taken);
+        apply(
+            &s,
+            &DomainEvent::PaymentTaken {
+                session_id: "sess".into(),
+                subtotal: 100,
+                discount_pct: 0,
+                vat_pct: 0,
+                total: 100,
+                method: "cash".into(),
+            },
+            ApplyCtx { aggregate_id: "pay", at_ms: 0 },
+        )
+        .unwrap();
+        assert!(s.sessions.get("sess").unwrap().payment_taken);
     }
 
     #[test]

@@ -334,7 +334,7 @@ export function SessionDetailRoute() {
                           )}
                           đ
                         </span>
-                        {!it.cancelled && remaining > 0 && (
+                        {!it.cancelled && remaining > 0 && !session.payment_taken && (
                           <>
                             <Button
                               size="sm"
@@ -369,13 +369,23 @@ export function SessionDetailRoute() {
         </div>
 
         <div className="flex gap-2">
-          <Button onClick={() => nav(`/sessions/${sessionId}/payment`)}>
+          <Button
+            onClick={() => nav(`/sessions/${sessionId}/payment`)}
+            disabled={session.status !== "Open" || session.payment_taken}
+            title={
+              session.payment_taken
+                ? "Already paid"
+                : session.status !== "Open"
+                ? "Session is not open"
+                : undefined
+            }
+          >
             Take payment
           </Button>
           <Button
             variant="outline"
             onClick={() => closeSession.mutate()}
-            disabled={closeSession.isPending}
+            disabled={closeSession.isPending || session.status !== "Open"}
           >
             Close session
           </Button>
@@ -387,6 +397,16 @@ export function SessionDetailRoute() {
             <Trans>Move…</Trans>
           </Button>
         </div>
+        {session.payment_taken && (
+          <div className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded mt-2 p-2">
+            <Trans>This session has been paid. Items can no longer be cancelled or returned.</Trans>
+          </div>
+        )}
+        {session.status !== "Open" && !session.payment_taken && (
+          <div className="text-sm text-gray-700 bg-gray-50 border rounded mt-2 p-2">
+            <Trans>Session is {session.status === "Closed" ? "closed" : "not open"}.</Trans>
+          </div>
+        )}
         {closeSession.error instanceof ApiError && (
           <div className="text-red-600 text-sm mt-2">
             {closeSession.error.message}
@@ -440,7 +460,12 @@ export function SessionDetailRoute() {
         </div>
         <Button
           className="w-full"
-          disabled={cartItems.length === 0 || placeOrder.isPending}
+          disabled={
+            cartItems.length === 0 ||
+            placeOrder.isPending ||
+            session.status !== "Open" ||
+            session.payment_taken
+          }
           onClick={() => placeOrder.mutate(cartItems)}
         >
           Place order ({cartItems.length})

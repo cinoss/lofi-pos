@@ -20,6 +20,13 @@ export function SpotPickerRoute() {
     queryFn: () => apiClient.get("/spots", z.array(Spot)),
   });
 
+  // Open sessions tell us which spots are actually occupied (master.spot.status
+  // is not maintained by the session lifecycle today; cross-reference instead).
+  const { data: activeSessions } = useQuery({
+    queryKey: ["sessions", "active"],
+    queryFn: () => apiClient.get("/sessions/active", z.array(SessionState)),
+  });
+
   const open = useMutation({
     mutationFn: (input: OpenSessionInput) =>
       apiClient.post("/sessions", SessionState, input),
@@ -29,9 +36,14 @@ export function SpotPickerRoute() {
     },
   });
 
-  if (!spots) return <div><Trans>Loading…</Trans></div>;
+  if (!spots || !activeSessions)
+    return <div><Trans>Loading…</Trans></div>;
 
-  const idle = spots.filter((s) => s.status === "idle");
+  const occupiedBy = new Map<number, string>();
+  for (const s of activeSessions) {
+    if (s.status === "Open") occupiedBy.set(s.spot.id, s.session_id);
+  }
+  const free = spots.filter((s) => !occupiedBy.has(s.id));
 
   return (
     <div>
@@ -39,27 +51,40 @@ export function SpotPickerRoute() {
         <Trans>Open new session</Trans>
       </h1>
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-        {idle.map((s) => (
-          <Button
-            key={s.id}
-            variant="outline"
-            className="h-24 flex flex-col"
-            disabled={open.isPending}
-            onClick={() =>
-              open.mutate({
-                idempotency_key: newKey(),
-                spot_id: s.id,
-              })
-            }
-          >
-            <span className="text-lg font-semibold">{s.name}</span>
-            <span className="text-xs text-gray-500">{s.kind}</span>
-          </Button>
-        ))}
+        {spots.map((s) => {
+          const sessionId = occupiedBy.get(s.id);
+          const isOccupied = !!sessionId;
+          return (
+            <Button
+              key={s.id}
+              variant={isOccupied ? "secondary" : "outline"}
+              className="h-24 flex flex-col"
+              disabled={open.isPending || isOccupied}
+              onClick={() =>
+                open.mutate({
+                  idempotency_key: newKey(),
+                  spot_id: s.id,
+                })
+              }
+              title={isOccupied ? "Occupied" : undefined}
+            >
+              <span className="text-lg font-semibold">{s.name}</span>
+              <span className="text-xs text-gray-500">
+                {s.kind}
+                {isOccupied && (
+                  <>
+                    {" · "}
+                    <Trans>occupied</Trans>
+                  </>
+                )}
+              </span>
+            </Button>
+          );
+        })}
       </div>
-      {idle.length === 0 && (
-        <p className="text-gray-500">
-          <Trans>No idle spots.</Trans>
+      {free.length === 0 && (
+        <p className="text-gray-500 mt-4">
+          <Trans>No idle spots — all spots have an open session.</Trans>
         </p>
       )}
     </div>

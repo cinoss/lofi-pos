@@ -18,6 +18,11 @@ msgstr ""
 msgid "{0, plural, one {# order} other {# orders}}"
 msgstr "{0, plural, one {# order} other {# orders}}"
 
+#. placeholder {0}: String(s.status)
+#: ../../packages/pos-ui/src/routes/sessions.tsx
+msgid "{0}"
+msgstr "{0}"
+
 #. placeholder {0}: claims.role
 #. placeholder {1}: claims.staff_id
 #: ../../packages/pos-ui/src/components/app-shell.tsx
@@ -28,6 +33,10 @@ msgstr "{0} · staff #{1}"
 #: ../../packages/pos-ui/src/routes/lock.tsx
 msgid "🔒 Locked — Re-enter PIN"
 msgstr "🔒 Locked — Re-enter PIN"
+
+#: ../../packages/pos-ui/src/routes/payment.tsx
+msgid "Add an order or enter a non-zero subtotal before charging."
+msgstr "Add an order or enter a non-zero subtotal before charging."
 
 #: src/routes/setup.tsx
 msgid "Address"
@@ -153,13 +162,25 @@ msgstr "Network error"
 msgid "No active sessions."
 msgstr "No active sessions."
 
+#: ../../packages/pos-ui/src/routes/spot-picker.tsx
+msgid "No idle spots — all spots have an open session."
+msgstr "No idle spots — all spots have an open session."
+
 #: ../../packages/pos-ui/src/components/transfer-modal.tsx
 msgid "No idle spots available."
 msgstr "No idle spots available."
 
 #: ../../packages/pos-ui/src/routes/spot-picker.tsx
-msgid "No idle spots."
-msgstr "No idle spots."
+#~ msgid "No idle spots."
+#~ msgstr "No idle spots."
+
+#: ../../packages/pos-ui/src/routes/spot-picker.tsx
+msgid "occupied"
+msgstr "occupied"
+
+#: ../../packages/pos-ui/src/routes/sessions.tsx
+msgid "Open"
+msgstr "Open"
 
 #: ../../packages/pos-ui/src/components/app-shell.tsx
 msgid "Open New"
@@ -192,6 +213,10 @@ msgstr "Owner PIN (min 6) *"
 #: src/App.tsx
 msgid "Owner role required"
 msgstr "Owner role required"
+
+#: ../../packages/pos-ui/src/routes/sessions.tsx
+msgid "Paid"
+msgstr "Paid"
 
 #: src/routes/setup.tsx
 msgid "Phone"
@@ -236,6 +261,11 @@ msgstr "Room time"
 #: src/routes/setup.tsx
 msgid "Saving…"
 msgstr "Saving…"
+
+#. placeholder {0}: session.status === "Closed" ? "closed" : "not open"
+#: ../../packages/pos-ui/src/routes/session-detail.tsx
+msgid "Session is {0}."
+msgstr "Session is {0}."
 
 #: ../../packages/pos-ui/src/components/app-shell.tsx
 msgid "Sessions"
@@ -289,6 +319,14 @@ msgstr "The admin console is restricted to the Owner role. Your account is curre
 #: src/routes/setup.tsx
 msgid "The Owner can sign into the cashier and the admin console. Choose a PIN of at least 6 digits and keep it private."
 msgstr "The Owner can sign into the cashier and the admin console. Choose a PIN of at least 6 digits and keep it private."
+
+#: ../../packages/pos-ui/src/routes/payment.tsx
+msgid "This session has already been paid."
+msgstr "This session has already been paid."
+
+#: ../../packages/pos-ui/src/routes/session-detail.tsx
+msgid "This session has been paid. Items can no longer be cancelled or returned."
+msgstr "This session has been paid. Items can no longer be cancelled or returned."
 
 #: src/routes/setup.tsx
 msgid "Timezone offset (seconds, e.g. 25200 = +07:00)"

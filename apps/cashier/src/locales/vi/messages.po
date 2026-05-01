@@ -18,6 +18,11 @@ msgstr ""
 msgid "{0, plural, one {# order} other {# orders}}"
 msgstr "{0, plural, other {# đơn}}"
 
+#. placeholder {0}: String(s.status)
+#: ../../packages/pos-ui/src/routes/sessions.tsx
+msgid "{0}"
+msgstr "{0}"
+
 #. placeholder {0}: claims.role
 #. placeholder {1}: claims.staff_id
 #: ../../packages/pos-ui/src/components/app-shell.tsx
@@ -27,6 +32,10 @@ msgstr "{0} · nhân viên #{1}"
 #: ../../packages/pos-ui/src/routes/lock.tsx
 msgid "🔒 Locked — Re-enter PIN"
 msgstr "🔒 Đã khóa — Nhập lại mã PIN"
+
+#: ../../packages/pos-ui/src/routes/payment.tsx
+msgid "Add an order or enter a non-zero subtotal before charging."
+msgstr "Thêm món hoặc nhập tạm tính khác 0 trước khi thanh toán."
 
 #: ../../packages/pos-ui/src/routes/payment.tsx
 msgid "Bank transfer"
@@ -121,13 +130,25 @@ msgstr "Lỗi mạng"
 msgid "No active sessions."
 msgstr "Không có phiên nào đang mở."
 
+#: ../../packages/pos-ui/src/routes/spot-picker.tsx
+msgid "No idle spots — all spots have an open session."
+msgstr "Không còn bàn / phòng trống — tất cả đang có phiên mở."
+
 #: ../../packages/pos-ui/src/components/transfer-modal.tsx
 msgid "No idle spots available."
 msgstr "Không có bàn / phòng trống."
 
 #: ../../packages/pos-ui/src/routes/spot-picker.tsx
-msgid "No idle spots."
-msgstr "Không còn bàn/phòng trống."
+#~ msgid "No idle spots."
+#~ msgstr "Không còn bàn/phòng trống."
+
+#: ../../packages/pos-ui/src/routes/spot-picker.tsx
+msgid "occupied"
+msgstr "đang có khách"
+
+#: ../../packages/pos-ui/src/routes/sessions.tsx
+msgid "Open"
+msgstr "Đang mở"
 
 #: src/routes/setup-required.tsx
 msgid "Open in browser"
@@ -144,6 +165,10 @@ msgstr "Mở phiên mới"
 #: ../../packages/pos-ui/src/routes/sessions.tsx
 msgid "Open new session →"
 msgstr "Mở phiên mới →"
+
+#: ../../packages/pos-ui/src/routes/sessions.tsx
+msgid "Paid"
+msgstr "Đã thanh toán"
 
 #: ../../packages/pos-ui/src/routes/session-detail.tsx
 msgid "Return"
@@ -165,6 +190,11 @@ msgstr "Thời gian phòng"
 msgid "Scan to open setup on your phone or laptop"
 msgstr "Quét để mở cài đặt trên điện thoại hoặc máy tính"
 
+#. placeholder {0}: session.status === "Closed" ? "closed" : "not open"
+#: ../../packages/pos-ui/src/routes/session-detail.tsx
+msgid "Session is {0}."
+msgstr "Phiên đang ở trạng thái {0}."
+
 #: ../../packages/pos-ui/src/components/app-shell.tsx
 msgid "Sessions"
 msgstr "Phiên"
@@ -184,6 +214,14 @@ msgstr "Bàn"
 #: ../../packages/pos-ui/src/routes/payment.tsx
 msgid "Take payment"
 msgstr "Thanh toán"
+
+#: ../../packages/pos-ui/src/routes/payment.tsx
+msgid "This session has already been paid."
+msgstr "Phiên này đã được thanh toán."
+
+#: ../../packages/pos-ui/src/routes/session-detail.tsx
+msgid "This session has been paid. Items can no longer be cancelled or returned."
+msgstr "Phiên này đã thanh toán. Không thể hủy hoặc trả món."
 
 #: ../../packages/pos-ui/src/routes/login.tsx
 msgid "Too many attempts. Try again in a minute."

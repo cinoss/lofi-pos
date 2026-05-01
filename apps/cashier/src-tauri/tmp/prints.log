@@ -1,0 +1,1 @@
+{"kind":"order_ticket","payload":{"items":[{"note":null,"product_id":1,"product_name":"Bia Tiger","qty":2,"recipe_snapshot":[],"route":"bar","unit_price":50000}],"order_id":"c2aff2d9-5f2a-4afc-8acf-9294c1980245","session_id":"4bd3966d-6597-4cb7-91aa-96d46b204a82"},"target_printer_id":null}

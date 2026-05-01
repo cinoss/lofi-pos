@@ -18,6 +18,11 @@ msgstr ""
 msgid "{0, plural, one {# order} other {# orders}}"
 msgstr ""
 
+#. placeholder {0}: String(s.status)
+#: ../../packages/pos-ui/src/routes/sessions.tsx
+msgid "{0}"
+msgstr ""
+
 #. placeholder {0}: claims.role
 #. placeholder {1}: claims.staff_id
 #: ../../packages/pos-ui/src/components/app-shell.tsx
@@ -26,6 +31,10 @@ msgstr ""
 
 #: ../../packages/pos-ui/src/routes/lock.tsx
 msgid "🔒 Locked — Re-enter PIN"
+msgstr ""
+
+#: ../../packages/pos-ui/src/routes/payment.tsx
+msgid "Add an order or enter a non-zero subtotal before charging."
 msgstr ""
 
 #: ../../packages/pos-ui/src/routes/payment.tsx
@@ -113,12 +122,24 @@ msgstr ""
 msgid "No active sessions."
 msgstr ""
 
+#: ../../packages/pos-ui/src/routes/spot-picker.tsx
+msgid "No idle spots — all spots have an open session."
+msgstr ""
+
 #: ../../packages/pos-ui/src/components/transfer-modal.tsx
 msgid "No idle spots available."
 msgstr "Không có bàn / phòng trống."
 
 #: ../../packages/pos-ui/src/routes/spot-picker.tsx
-msgid "No idle spots."
+#~ msgid "No idle spots."
+#~ msgstr ""
+
+#: ../../packages/pos-ui/src/routes/spot-picker.tsx
+msgid "occupied"
+msgstr ""
+
+#: ../../packages/pos-ui/src/routes/sessions.tsx
+msgid "Open"
 msgstr ""
 
 #: ../../packages/pos-ui/src/components/app-shell.tsx
@@ -131,6 +152,10 @@ msgstr ""
 
 #: ../../packages/pos-ui/src/routes/sessions.tsx
 msgid "Open new session →"
+msgstr ""
+
+#: ../../packages/pos-ui/src/routes/sessions.tsx
+msgid "Paid"
 msgstr ""
 
 #: ../../packages/pos-ui/src/routes/session-detail.tsx
@@ -148,6 +173,11 @@ msgstr ""
 #: ../../packages/pos-ui/src/components/room-clock.tsx
 msgid "Room time"
 msgstr "Thời gian phòng"
+
+#. placeholder {0}: session.status === "Closed" ? "closed" : "not open"
+#: ../../packages/pos-ui/src/routes/session-detail.tsx
+msgid "Session is {0}."
+msgstr ""
 
 #: ../../packages/pos-ui/src/components/app-shell.tsx
 msgid "Sessions"
@@ -167,6 +197,14 @@ msgstr ""
 
 #: ../../packages/pos-ui/src/routes/payment.tsx
 msgid "Take payment"
+msgstr ""
+
+#: ../../packages/pos-ui/src/routes/payment.tsx
+msgid "This session has already been paid."
+msgstr ""
+
+#: ../../packages/pos-ui/src/routes/session-detail.tsx
+msgid "This session has been paid. Items can no longer be cancelled or returned."
 msgstr ""
 
 #: ../../packages/pos-ui/src/routes/login.tsx

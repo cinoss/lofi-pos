@@ -30,6 +30,11 @@ pub struct SessionState {
     /// which only sees a single aggregate's events).
     #[serde(default)]
     pub order_ids: Vec<String>,
+    /// True once a `PaymentTaken` event has been applied for this session.
+    /// Surfaced so the UI can hide cancel/return controls without a separate
+    /// query. Maintained by `domain::apply::apply`.
+    #[serde(default)]
+    pub payment_taken: bool,
 }
 
 /// Fold events into a single session's projection.
@@ -71,6 +76,7 @@ pub fn fold(session_id: &str, events: &[DomainEvent]) -> Option<SessionState> {
                     customer_label: customer_label.clone(),
                     team: team.clone(),
                     order_ids: Vec::new(),
+                    payment_taken: false,
                 });
             }
             DomainEvent::SessionClosed { .. } => {

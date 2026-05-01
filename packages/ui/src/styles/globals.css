@@ -11,8 +11,10 @@
    - 4 up: <repo root>
 */
 @source "../../../../apps/cashier/src/**/*.{ts,tsx}";
+@source "../../../../apps/admin/src/**/*.{ts,tsx}";
 @source "../../../../apps/web/src/**/*.{ts,tsx}";
 @source "../../../../packages/ui/src/**/*.{ts,tsx}";
+@source "../../../../packages/pos-ui/src/**/*.{ts,tsx}";
 
 @theme inline {
     --font-heading: var(--font-sans);

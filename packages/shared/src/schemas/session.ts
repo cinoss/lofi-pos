@@ -18,6 +18,9 @@ export const SessionState = z.object({
   customer_label: z.string().nullable(),
   team: z.string().nullable(),
   order_ids: z.array(z.string()),
+  /** True once a PaymentTaken event has been applied for this session.
+   *  UI hides cancel/return controls when set. */
+  payment_taken: z.boolean(),
 }).strict();
 export type SessionState = z.infer<typeof SessionState>;
 

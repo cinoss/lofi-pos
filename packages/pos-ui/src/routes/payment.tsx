@@ -125,6 +125,7 @@ export function PaymentRoute() {
           label={t`Subtotal (VND)`}
           value={subtotal}
           onChange={setSubtotal}
+          min={0}
         />
         {roomCharge > 0 && (
           <div className="text-sm text-gray-600 -mt-2">
@@ -136,8 +137,16 @@ export function PaymentRoute() {
           label={t`Discount %`}
           value={discountPct}
           onChange={setDiscountPct}
+          min={0}
+          max={100}
         />
-        <Field label={t`VAT %`} value={vatPct} onChange={setVatPct} />
+        <Field
+          label={t`VAT %`}
+          value={vatPct}
+          onChange={setVatPct}
+          min={0}
+          max={100}
+        />
         <div>
           <label className="block text-sm mb-1">
             <Trans>Method</Trans>
@@ -157,11 +166,30 @@ export function PaymentRoute() {
         </div>
         <Button
           className="w-full"
-          disabled={pay.isPending}
+          disabled={
+            pay.isPending ||
+            session?.payment_taken ||
+            session?.status !== "Open" ||
+            (subtotal === 0 && (session?.order_ids.length ?? 0) === 0)
+          }
           onClick={submit}
         >
           <Trans>Charge</Trans>
         </Button>
+        {session?.payment_taken && (
+          <div className="text-amber-700 text-sm">
+            <Trans>This session has already been paid.</Trans>
+          </div>
+        )}
+        {!session?.payment_taken &&
+          subtotal === 0 &&
+          (session?.order_ids.length ?? 0) === 0 && (
+            <div className="text-gray-600 text-sm">
+              <Trans>
+                Add an order or enter a non-zero subtotal before charging.
+              </Trans>
+            </div>
+          )}
         {pay.error instanceof ApiError &&
           pay.error.code !== "override_required" && (
             <div className="text-red-600 text-sm">{pay.error.message}</div>
@@ -181,10 +209,14 @@ function Field({
   label,
   value,
   onChange,
+  min,
+  max,
 }: {
   label: string;
   value: number;
   onChange: (n: number) => void;
+  min?: number;
+  max?: number;
 }) {
   return (
     <div>
@@ -193,7 +225,15 @@ function Field({
         type="number"
         className="border rounded px-2 py-1 w-full"
         value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
+        min={min}
+        max={max}
+        onChange={(e) => {
+          let n = Number(e.target.value);
+          if (Number.isNaN(n)) n = 0;
+          if (typeof min === "number" && n < min) n = min;
+          if (typeof max === "number" && n > max) n = max;
+          onChange(n);
+        }}
       />
     </div>
   );
