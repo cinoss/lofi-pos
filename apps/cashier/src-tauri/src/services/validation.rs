@@ -120,6 +120,11 @@ pub fn validate(store: &AggregateStore, aggregate_id: &str, ev: &DomainEvent) ->
                 .orders
                 .get(order_id)
                 .ok_or_else(|| AppError::Validation("order not placed".into()))?;
+            if store.payments.contains_key(&o.session_id) {
+                return Err(AppError::Conflict(
+                    "cannot cancel item after payment has been taken".into(),
+                ));
+            }
             if *item_index >= o.items.len() {
                 return Err(AppError::Validation(format!(
                     "item_index {item_index} out of bounds (len {})",
@@ -140,6 +145,11 @@ pub fn validate(store: &AggregateStore, aggregate_id: &str, ev: &DomainEvent) ->
                 .orders
                 .get(order_id)
                 .ok_or_else(|| AppError::Validation("order not placed".into()))?;
+            if store.payments.contains_key(&o.session_id) {
+                return Err(AppError::Conflict(
+                    "cannot return item after payment has been taken".into(),
+                ));
+            }
             if *item_index >= o.items.len() {
                 return Err(AppError::Validation(format!(
                     "item_index {item_index} out of bounds (len {})",
@@ -159,7 +169,14 @@ pub fn validate(store: &AggregateStore, aggregate_id: &str, ev: &DomainEvent) ->
                 )));
             }
         }
-        DomainEvent::PaymentTaken { session_id, .. } => {
+        DomainEvent::PaymentTaken {
+            session_id,
+            subtotal,
+            discount_pct,
+            vat_pct,
+            total,
+            ..
+        } => {
             // CONTRACT: payment_cmd MUST write PaymentTaken with aggregate_id == session_id.
             if store.payments.contains_key(session_id) {
                 return Err(AppError::Conflict("session already paid".into()));
@@ -173,6 +190,35 @@ pub fn validate(store: &AggregateStore, aggregate_id: &str, ev: &DomainEvent) ->
                     "session status {:?}, cannot take payment",
                     s.status
                 )));
+            }
+            // Numeric sanity.
+            if *subtotal < 0 {
+                return Err(AppError::Validation(format!(
+                    "payment subtotal {subtotal} must be non-negative"
+                )));
+            }
+            if *total < 0 {
+                return Err(AppError::Validation(format!(
+                    "payment total {total} must be non-negative"
+                )));
+            }
+            if *discount_pct > 100 {
+                return Err(AppError::Validation(format!(
+                    "discount_pct {discount_pct} must be in 0..=100"
+                )));
+            }
+            if *vat_pct > 100 {
+                return Err(AppError::Validation(format!(
+                    "vat_pct {vat_pct} must be in 0..=100"
+                )));
+            }
+            // Reject literal no-op payments: zero subtotal AND no orders.
+            // (A session with orders comped to zero is still a real
+            // transaction — only the truly empty case is rejected.)
+            if *subtotal == 0 && s.order_ids.is_empty() {
+                return Err(AppError::Validation(
+                    "cannot take payment on a session with no orders and zero subtotal".into(),
+                ));
             }
         }
         DomainEvent::OrderPlaced {

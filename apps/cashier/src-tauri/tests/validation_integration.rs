@@ -349,6 +349,111 @@ fn merge_with_duplicate_sources_rejected() {
     assert!(validate(&store, "t", &merge).is_err());
 }
 
+fn pay(session: &str, subtotal: i64, discount_pct: u32, vat_pct: u32, total: i64) -> DomainEvent {
+    DomainEvent::PaymentTaken {
+        session_id: session.into(),
+        subtotal,
+        discount_pct,
+        vat_pct,
+        total,
+        method: "cash".into(),
+    }
+}
+
+#[test]
+fn payment_with_negative_subtotal_rejected() {
+    let store = AggregateStore::new();
+    open_session(&store, "s");
+    place_order(&store, "s", "o", 1);
+    let p = pay("s", -100, 0, 0, -100);
+    assert!(validate(&store, "s", &p).is_err());
+}
+
+#[test]
+fn payment_with_negative_total_rejected() {
+    let store = AggregateStore::new();
+    open_session(&store, "s");
+    place_order(&store, "s", "o", 1);
+    let p = pay("s", 1000, 0, 0, -50);
+    assert!(validate(&store, "s", &p).is_err());
+}
+
+#[test]
+fn payment_with_discount_over_100_rejected() {
+    let store = AggregateStore::new();
+    open_session(&store, "s");
+    place_order(&store, "s", "o", 1);
+    let p = pay("s", 1000, 150, 0, 0);
+    assert!(validate(&store, "s", &p).is_err());
+}
+
+#[test]
+fn payment_with_vat_over_100_rejected() {
+    let store = AggregateStore::new();
+    open_session(&store, "s");
+    place_order(&store, "s", "o", 1);
+    let p = pay("s", 1000, 0, 150, 2500);
+    assert!(validate(&store, "s", &p).is_err());
+}
+
+#[test]
+fn payment_with_zero_subtotal_and_no_orders_rejected() {
+    let store = AggregateStore::new();
+    open_session(&store, "s");
+    let p = pay("s", 0, 0, 0, 0);
+    assert!(validate(&store, "s", &p).is_err());
+}
+
+#[test]
+fn payment_with_orders_and_zero_subtotal_allowed() {
+    // Cashier overrode the line items to nothing (e.g., everything comped);
+    // there ARE orders, so the payment is a real transaction with 0 owed.
+    let store = AggregateStore::new();
+    open_session(&store, "s");
+    place_order(&store, "s", "o", 1);
+    let p = pay("s", 0, 0, 0, 0);
+    assert!(validate(&store, "s", &p).is_ok());
+}
+
+#[test]
+fn cancel_item_after_payment_rejected() {
+    let store = AggregateStore::new();
+    open_session(&store, "s");
+    place_order(&store, "s", "o", 1);
+    apply(
+        &store,
+        &pay("s", 1000, 0, 0, 1000),
+        ApplyCtx { aggregate_id: "s", at_ms: 0 },
+    )
+    .unwrap();
+    let cancel = DomainEvent::OrderItemCancelled {
+        order_id: "o".into(),
+        item_index: 0,
+        reason: None,
+    };
+    assert!(validate(&store, "o", &cancel).is_err());
+}
+
+#[test]
+fn return_item_after_payment_rejected() {
+    let store = AggregateStore::new();
+    open_session(&store, "s");
+    place_order(&store, "s", "o", 2);
+    apply(
+        &store,
+        &pay("s", 2000, 0, 0, 2000),
+        ApplyCtx { aggregate_id: "s", at_ms: 0 },
+    )
+    .unwrap();
+    let ret = DomainEvent::OrderItemReturned {
+        order_id: "o".into(),
+        item_index: 0,
+        qty: 1,
+        reason: None,
+    };
+    assert!(validate(&store, "o", &ret).is_err());
+}
+
 #[test]
 fn return_cancelled_item_rejected() {
     let store = AggregateStore::new();

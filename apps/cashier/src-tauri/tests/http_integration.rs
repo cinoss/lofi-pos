@@ -218,17 +218,19 @@ async fn http_full_session_lifecycle() {
     assert_eq!(session["status"], "Open");
 
     // Place payment directly (orders need product seed; skip ordering for
-    // this lifecycle to keep test focused on the wire path).
+    // this lifecycle to keep test focused on the wire path). Subtotal is
+    // non-zero because a literal 0-on-empty-session payment is rejected
+    // by validation (cover-time / room-time charges go in here too).
     let paid: Value = rig
         .client
         .post(format!("{}/sessions/{session_id}/payment", rig.base_url))
         .header("authorization", &bearer)
         .json(&json!({
             "idempotency_key": "pay-1",
-            "subtotal": 0,
+            "subtotal": 1000,
             "discount_pct": 0,
             "vat_pct": 0,
-            "total": 0,
+            "total": 1000,
             "method": "cash",
         }))
         .send()
