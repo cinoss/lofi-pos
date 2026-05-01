@@ -23,7 +23,7 @@ pub fn validate(store: &AggregateStore, aggregate_id: &str, ev: &DomainEvent) ->
                 )));
             }
         }
-        DomainEvent::SessionTransferred { to, .. } => {
+        DomainEvent::SessionTransferred { from, to } => {
             let s = store
                 .sessions
                 .get(aggregate_id)
@@ -32,6 +32,13 @@ pub fn validate(store: &AggregateStore, aggregate_id: &str, ev: &DomainEvent) ->
                 return Err(AppError::Conflict(format!(
                     "session {aggregate_id} status {:?}, cannot transfer",
                     s.status
+                )));
+            }
+            // No-op transfer (same spot before and after) is meaningless.
+            if from.id() == to.id() {
+                return Err(AppError::Validation(format!(
+                    "transfer target spot {} is the same as current spot",
+                    to.id()
                 )));
             }
             // Reject if any OTHER currently-Open session occupies the target spot.
@@ -61,11 +68,23 @@ pub fn validate(store: &AggregateStore, aggregate_id: &str, ev: &DomainEvent) ->
                 )));
             }
             drop(target);
+            if sources.is_empty() {
+                return Err(AppError::Validation("merge requires at least one source".into()));
+            }
             // Target must not appear in its own sources.
             if sources.iter().any(|s| s == aggregate_id) {
                 return Err(AppError::Validation(format!(
                     "merge target {aggregate_id} cannot also be a source"
                 )));
+            }
+            // Sources must be distinct.
+            let mut seen = std::collections::HashSet::with_capacity(sources.len());
+            for src in sources {
+                if !seen.insert(src) {
+                    return Err(AppError::Validation(format!(
+                        "merge source {src} listed more than once"
+                    )));
+                }
             }
             for src in sources {
                 let src_state = store
@@ -128,6 +147,11 @@ pub fn validate(store: &AggregateStore, aggregate_id: &str, ev: &DomainEvent) ->
                 )));
             }
             let it = &o.items[*item_index];
+            if it.cancelled {
+                return Err(AppError::Conflict(
+                    "cannot return a cancelled item".into(),
+                ));
+            }
             let remaining = it.spec.qty - it.returned_qty;
             if *qty <= 0 || *qty > remaining {
                 return Err(AppError::Validation(format!(
@@ -151,7 +175,9 @@ pub fn validate(store: &AggregateStore, aggregate_id: &str, ev: &DomainEvent) ->
                 )));
             }
         }
-        DomainEvent::OrderPlaced { session_id, .. } => {
+        DomainEvent::OrderPlaced {
+            session_id, items, ..
+        } => {
             let s = store
                 .sessions
                 .get(session_id)
@@ -161,6 +187,25 @@ pub fn validate(store: &AggregateStore, aggregate_id: &str, ev: &DomainEvent) ->
                     "session {session_id} status {:?}, cannot place order",
                     s.status
                 )));
+            }
+            if items.is_empty() {
+                return Err(AppError::Validation(
+                    "order must have at least one item".into(),
+                ));
+            }
+            for (i, it) in items.iter().enumerate() {
+                if it.qty <= 0 {
+                    return Err(AppError::Validation(format!(
+                        "item {i} qty {} must be positive",
+                        it.qty
+                    )));
+                }
+                if it.unit_price < 0 {
+                    return Err(AppError::Validation(format!(
+                        "item {i} unit_price {} must be non-negative",
+                        it.unit_price
+                    )));
+                }
             }
         }
         DomainEvent::SessionOpened { spot, .. } => {
