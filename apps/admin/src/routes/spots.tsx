@@ -48,6 +48,13 @@ export function SpotsRoute() {
 
   const upsert = useMutation({
     mutationFn: async (f: FormState) => {
+      // Pre-mutate guard: rooms must have an hourly_rate. Empty/blank silently
+      // coerces to 0 via Number(""), which would create a "free" room — almost
+      // certainly an admin slip rather than intent. Bail with a thrown Error so
+      // the existing onError surfaces it inline.
+      if (f.kind === "room" && f.hourly_rate.trim() === "") {
+        throw new Error("Hourly rate is required for rooms");
+      }
       const billing_config =
         f.kind === "room"
           ? {
@@ -216,6 +223,7 @@ export function SpotsRoute() {
                     onChange={(e) =>
                       setForm({ ...form, hourly_rate: e.target.value })
                     }
+                    type="number"
                     inputMode="numeric"
                     min={0}
                     required
@@ -229,6 +237,7 @@ export function SpotsRoute() {
                     onChange={(e) =>
                       setForm({ ...form, bucket_minutes: e.target.value })
                     }
+                    type="number"
                     inputMode="numeric"
                     min={1}
                     required
@@ -242,6 +251,7 @@ export function SpotsRoute() {
                     onChange={(e) =>
                       setForm({ ...form, included_minutes: e.target.value })
                     }
+                    type="number"
                     inputMode="numeric"
                     min={0}
                   />
@@ -254,6 +264,7 @@ export function SpotsRoute() {
                     onChange={(e) =>
                       setForm({ ...form, min_charge: e.target.value })
                     }
+                    type="number"
                     inputMode="numeric"
                     min={0}
                   />

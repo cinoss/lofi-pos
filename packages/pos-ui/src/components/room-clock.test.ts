@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computeRoomCharge } from "./room-clock";
+import { computeRoomCharge, computeRoomChargeBreakdown } from "./room-clock";
 
 const MIN = 60_000;
 const billing = (h: number, b: number, inc: number, min: number) => ({
@@ -63,5 +63,51 @@ describe("computeRoomCharge", () => {
     // (overage_buckets * bucket_minutes * hourly_rate / 60) yields 10k overage
     // for 2 buckets at 5 min @ 60k/h, matching the prior 35-min test case's math.
     expect(computeRoomCharge(0, 36 * MIN, billing(60_000, 5, 30, 20_000))).toBe(30_000);
+  });
+
+  it("bucket_minutes=0 (degenerate): returns min_charge with no overage", () => {
+    // Defensive: malformed JSON shouldn't divide by zero / yield NaN.
+    expect(computeRoomCharge(0, 65 * MIN, billing(60_000, 0, 0, 75_000))).toBe(75_000);
+    const b = computeRoomChargeBreakdown(0, 65 * MIN, billing(60_000, 0, 0, 75_000));
+    expect(b.overageBuckets).toBe(0);
+    expect(b.charge).toBe(75_000);
+    expect(Number.isFinite(b.charge)).toBe(true);
+  });
+});
+
+describe("computeRoomChargeBreakdown — display matches charge", () => {
+  // Regression: at 90s with 60k/h, the displayed text used to floor elapsedMin
+  // to 1 ("1 × 1m × 60k/h") while charge ceiled to 2 buckets (=2,000đ). The
+  // breakdown returned must drive both surfaces.
+  it("90s @ 60k/h, bucket=1: 2 buckets × 1m, charge 2,000", () => {
+    const b = computeRoomChargeBreakdown(0, 90_000, billing(60_000, 1, 0, 0));
+    expect(b.elapsedSec).toBe(90);
+    expect(b.elapsedMin).toBe(2);
+    expect(b.overageMin).toBe(2);
+    expect(b.overageBuckets).toBe(2);
+    expect(b.charge).toBe(2_000);
+    // Multiplied as displayed: buckets × bucket_minutes × hourly_rate / 60.
+    expect(b.overageBuckets * 1 * 60_000 / 60).toBe(b.charge);
+  });
+
+  it("16 min @ 60k/h, bucket=15: 2 buckets × 15m, charge 30,000", () => {
+    const b = computeRoomChargeBreakdown(0, 16 * MIN, billing(60_000, 15, 0, 0));
+    expect(b.elapsedMin).toBe(16);
+    expect(b.overageBuckets).toBe(2);
+    expect(b.charge).toBe(30_000);
+    expect(b.overageBuckets * 15 * 60_000 / 60).toBe(b.charge);
+  });
+
+  it("inside included period: overageBuckets=0, charge=min_charge", () => {
+    const b = computeRoomChargeBreakdown(0, 5 * MIN, billing(150_000, 60, 60, 150_000));
+    expect(b.overageBuckets).toBe(0);
+    expect(b.overageMin).toBe(0);
+    expect(b.charge).toBe(150_000);
+  });
+
+  it("elapsedSec uses floor for clock display while elapsedMin uses ceil for billing", () => {
+    const b = computeRoomChargeBreakdown(0, 61_500, billing(60_000, 1, 0, 0));
+    expect(b.elapsedSec).toBe(61); // 1:01 on the wall clock
+    expect(b.elapsedMin).toBe(2); // billed as 2 minutes
   });
 });
