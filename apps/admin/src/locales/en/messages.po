@@ -46,6 +46,10 @@ msgstr "Add an order or enter a non-zero subtotal before charging."
 msgid "Address"
 msgstr "Address"
 
+#: ../../packages/pos-ui/src/components/app-shell.tsx
+msgid "Admin"
+msgstr "Admin"
+
 #: ../../packages/pos-ui/src/routes/payment.tsx
 msgid "Bank transfer"
 msgstr "Bank transfer"

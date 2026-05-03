@@ -37,6 +37,10 @@ msgstr "🔒 Đã khóa — Nhập lại mã PIN"
 msgid "Add an order or enter a non-zero subtotal before charging."
 msgstr "Thêm món hoặc nhập tạm tính khác 0 trước khi thanh toán."
 
+#: ../../packages/pos-ui/src/components/app-shell.tsx
+msgid "Admin"
+msgstr "Quản trị"
+
 #: ../../packages/pos-ui/src/routes/payment.tsx
 msgid "Bank transfer"
 msgstr "Chuyển khoản"

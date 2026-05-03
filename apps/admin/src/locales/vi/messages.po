@@ -46,6 +46,10 @@ msgstr "Thêm món hoặc nhập tạm tính khác 0 trước khi thanh toán."
 msgid "Address"
 msgstr "Địa chỉ"
 
+#: ../../packages/pos-ui/src/components/app-shell.tsx
+msgid "Admin"
+msgstr "Quản trị"
+
 #: ../../packages/pos-ui/src/routes/payment.tsx
 msgid "Bank transfer"
 msgstr "Chuyển khoản"
