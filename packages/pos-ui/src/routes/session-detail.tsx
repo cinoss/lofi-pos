@@ -284,7 +284,7 @@ export function SessionDetailRoute() {
         {session.spot.kind === "room" && session.status === "Open" && (
           <RoomClock
             openedAtMs={session.opened_at_ms}
-            hourlyRate={session.spot.hourly_rate}
+            billing={session.spot.billing}
           />
         )}
 

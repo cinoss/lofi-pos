@@ -55,7 +55,7 @@ export function PaymentRoute() {
       ? computeRoomCharge(
           session.opened_at_ms,
           Date.now(),
-          session.spot.hourly_rate,
+          session.spot.billing,
         )
       : 0;
 

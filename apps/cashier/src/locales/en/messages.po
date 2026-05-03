@@ -84,6 +84,11 @@ msgstr "First-time setup required"
 msgid "I've finished setup"
 msgstr "I've finished setup"
 
+#. placeholder {0}: billing.min_charge.toLocaleString("vi-VN")
+#: ../../packages/pos-ui/src/components/room-clock.tsx
+msgid "Included period: {0}đ"
+msgstr "Included period: {0}đ"
+
 #: ../../packages/pos-ui/src/routes/payment.tsx
 msgid "Includes room time charge:"
 msgstr "Includes room time charge:"

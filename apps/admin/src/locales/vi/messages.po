@@ -30,6 +30,10 @@ msgstr "{0}"
 msgid "{0} · staff #{1}"
 msgstr "{0} · nhân viên #{1}"
 
+#: src/routes/spots.tsx
+msgid "+ New Spot"
+msgstr "+ Khu vực mới"
+
 #: ../../packages/pos-ui/src/routes/lock.tsx
 msgid "🔒 Locked — Re-enter PIN"
 msgstr "🔒 Đã khóa — Nhập lại mã PIN"
@@ -46,6 +50,10 @@ msgstr "Địa chỉ"
 msgid "Bank transfer"
 msgstr "Chuyển khoản"
 
+#: src/routes/spots.tsx
+msgid "Bucket (minutes)"
+msgstr "Đơn vị tính (phút)"
+
 #: src/routes/setup.tsx
 msgid "Business-day cutoff hour (0–23)"
 msgstr "Giờ chốt ngày kinh doanh (0–23)"
@@ -53,6 +61,7 @@ msgstr "Giờ chốt ngày kinh doanh (0–23)"
 #: ../../packages/pos-ui/src/components/transfer-modal.tsx
 #: ../../packages/pos-ui/src/routes/session-detail.tsx
 #: ../../packages/pos-ui/src/routes/session-detail.tsx
+#: src/routes/spots.tsx
 msgid "Cancel"
 msgstr "Hủy"
 
@@ -84,9 +93,22 @@ msgstr "Tiếp tục"
 msgid "Currency *"
 msgstr "Tiền tệ *"
 
+#: src/routes/spots.tsx
+msgid "Delete"
+msgstr "Xóa"
+
 #: ../../packages/pos-ui/src/routes/payment.tsx
 msgid "Discount %"
 msgstr "Giảm giá %"
+
+#: src/routes/spots.tsx
+msgid "Edit"
+msgstr "Sửa"
+
+#. placeholder {0}: form?.id
+#: src/routes/spots.tsx
+msgid "Edit spot #{0}"
+msgstr "Sửa khu vực #{0}"
 
 #: ../../packages/pos-ui/src/components/pin-pad.tsx
 msgid "Enter PIN"
@@ -105,9 +127,31 @@ msgstr "Lỗi: {0}"
 msgid "First-time setup"
 msgstr "Cài đặt lần đầu"
 
+#: src/routes/spots.tsx
+msgid "Hourly"
+msgstr "Giá/giờ"
+
+#: src/routes/spots.tsx
+msgid "Hourly rate (VND/h)"
+msgstr "Giá theo giờ (VND/h)"
+
+#: src/routes/spots.tsx
+msgid "Included minutes"
+msgstr "Phút bao gồm"
+
+#. placeholder {0}: billing.min_charge.toLocaleString("vi-VN")
+#: ../../packages/pos-ui/src/components/room-clock.tsx
+msgid "Included period: {0}đ"
+msgstr "Bao gồm: {0}đ"
+
 #: ../../packages/pos-ui/src/routes/payment.tsx
 msgid "Includes room time charge:"
 msgstr "Đã bao gồm tiền phòng:"
+
+#: src/routes/spots.tsx
+#: src/routes/spots.tsx
+msgid "Kind"
+msgstr "Loại"
 
 #: ../../packages/pos-ui/src/routes/session-detail.tsx
 #: ../../packages/pos-ui/src/routes/sessions.tsx
@@ -146,6 +190,10 @@ msgstr "Tối đa: {max}"
 msgid "Method"
 msgstr "Hình thức"
 
+#: src/routes/spots.tsx
+msgid "Minimum charge (VND)"
+msgstr "Tối thiểu (VND)"
+
 #: ../../packages/pos-ui/src/components/transfer-modal.tsx
 msgid "Move to spot"
 msgstr "Chuyển sang bàn / phòng"
@@ -154,9 +202,18 @@ msgstr "Chuyển sang bàn / phòng"
 msgid "Move…"
 msgstr "Chuyển..."
 
+#: src/routes/spots.tsx
+#: src/routes/spots.tsx
+msgid "Name"
+msgstr "Tên"
+
 #: ../../packages/pos-ui/src/routes/login.tsx
 msgid "Network error"
 msgstr "Lỗi mạng"
+
+#: src/routes/spots.tsx
+msgid "New spot"
+msgstr "Khu vực mới"
 
 #: ../../packages/pos-ui/src/routes/sessions.tsx
 msgid "No active sessions."
@@ -218,6 +275,14 @@ msgstr "Yêu cầu vai trò chủ"
 msgid "Paid"
 msgstr "Đã thanh toán"
 
+#: src/routes/spots.tsx
+msgid "Parent"
+msgstr "Cha"
+
+#: src/routes/spots.tsx
+msgid "Parent ID — leave blank for top-level"
+msgstr "ID cha — để trống nếu cấp cao nhất"
+
 #: src/routes/setup.tsx
 msgid "Phone"
 msgstr "Điện thoại"
@@ -258,6 +323,10 @@ msgstr "Phòng"
 msgid "Room time"
 msgstr "Thời gian phòng"
 
+#: src/routes/spots.tsx
+msgid "Save"
+msgstr "Lưu"
+
 #: src/routes/setup.tsx
 msgid "Saving…"
 msgstr "Đang lưu…"
@@ -284,12 +353,17 @@ msgid "Setup failed"
 msgstr "Cài đặt thất bại"
 
 #: src/App.tsx
+#: src/routes/spots.tsx
 msgid "Spots"
 msgstr "Bàn / Phòng"
 
 #: src/App.tsx
 msgid "Staff"
 msgstr "Nhân viên"
+
+#: src/routes/spots.tsx
+msgid "Status"
+msgstr "Trạng thái"
 
 #: ../../packages/pos-ui/src/routes/session-detail.tsx
 msgid "Submit"

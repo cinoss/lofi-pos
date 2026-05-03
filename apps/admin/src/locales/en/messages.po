@@ -30,6 +30,10 @@ msgstr "{0}"
 msgid "{0} · staff #{1}"
 msgstr "{0} · staff #{1}"
 
+#: src/routes/spots.tsx
+msgid "+ New Spot"
+msgstr "+ New Spot"
+
 #: ../../packages/pos-ui/src/routes/lock.tsx
 msgid "🔒 Locked — Re-enter PIN"
 msgstr "🔒 Locked — Re-enter PIN"
@@ -46,6 +50,10 @@ msgstr "Address"
 msgid "Bank transfer"
 msgstr "Bank transfer"
 
+#: src/routes/spots.tsx
+msgid "Bucket (minutes)"
+msgstr "Bucket (minutes)"
+
 #: src/routes/setup.tsx
 msgid "Business-day cutoff hour (0–23)"
 msgstr "Business-day cutoff hour (0–23)"
@@ -53,6 +61,7 @@ msgstr "Business-day cutoff hour (0–23)"
 #: ../../packages/pos-ui/src/components/transfer-modal.tsx
 #: ../../packages/pos-ui/src/routes/session-detail.tsx
 #: ../../packages/pos-ui/src/routes/session-detail.tsx
+#: src/routes/spots.tsx
 msgid "Cancel"
 msgstr "Cancel"
 
@@ -84,9 +93,22 @@ msgstr "Continue"
 msgid "Currency *"
 msgstr "Currency *"
 
+#: src/routes/spots.tsx
+msgid "Delete"
+msgstr "Delete"
+
 #: ../../packages/pos-ui/src/routes/payment.tsx
 msgid "Discount %"
 msgstr "Discount %"
+
+#: src/routes/spots.tsx
+msgid "Edit"
+msgstr "Edit"
+
+#. placeholder {0}: form?.id
+#: src/routes/spots.tsx
+msgid "Edit spot #{0}"
+msgstr "Edit spot #{0}"
 
 #: ../../packages/pos-ui/src/components/pin-pad.tsx
 msgid "Enter PIN"
@@ -105,9 +127,31 @@ msgstr "Error: {0}"
 msgid "First-time setup"
 msgstr "First-time setup"
 
+#: src/routes/spots.tsx
+msgid "Hourly"
+msgstr "Hourly"
+
+#: src/routes/spots.tsx
+msgid "Hourly rate (VND/h)"
+msgstr "Hourly rate (VND/h)"
+
+#: src/routes/spots.tsx
+msgid "Included minutes"
+msgstr "Included minutes"
+
+#. placeholder {0}: billing.min_charge.toLocaleString("vi-VN")
+#: ../../packages/pos-ui/src/components/room-clock.tsx
+msgid "Included period: {0}đ"
+msgstr "Included period: {0}đ"
+
 #: ../../packages/pos-ui/src/routes/payment.tsx
 msgid "Includes room time charge:"
 msgstr "Includes room time charge:"
+
+#: src/routes/spots.tsx
+#: src/routes/spots.tsx
+msgid "Kind"
+msgstr "Kind"
 
 #: ../../packages/pos-ui/src/routes/session-detail.tsx
 #: ../../packages/pos-ui/src/routes/sessions.tsx
@@ -146,6 +190,10 @@ msgstr "Max: {max}"
 msgid "Method"
 msgstr "Method"
 
+#: src/routes/spots.tsx
+msgid "Minimum charge (VND)"
+msgstr "Minimum charge (VND)"
+
 #: ../../packages/pos-ui/src/components/transfer-modal.tsx
 msgid "Move to spot"
 msgstr "Move to spot"
@@ -154,9 +202,18 @@ msgstr "Move to spot"
 msgid "Move…"
 msgstr "Move…"
 
+#: src/routes/spots.tsx
+#: src/routes/spots.tsx
+msgid "Name"
+msgstr "Name"
+
 #: ../../packages/pos-ui/src/routes/login.tsx
 msgid "Network error"
 msgstr "Network error"
+
+#: src/routes/spots.tsx
+msgid "New spot"
+msgstr "New spot"
 
 #: ../../packages/pos-ui/src/routes/sessions.tsx
 msgid "No active sessions."
@@ -218,6 +275,14 @@ msgstr "Owner role required"
 msgid "Paid"
 msgstr "Paid"
 
+#: src/routes/spots.tsx
+msgid "Parent"
+msgstr "Parent"
+
+#: src/routes/spots.tsx
+msgid "Parent ID — leave blank for top-level"
+msgstr "Parent ID — leave blank for top-level"
+
 #: src/routes/setup.tsx
 msgid "Phone"
 msgstr "Phone"
@@ -258,6 +323,10 @@ msgstr "Room"
 msgid "Room time"
 msgstr "Room time"
 
+#: src/routes/spots.tsx
+msgid "Save"
+msgstr "Save"
+
 #: src/routes/setup.tsx
 msgid "Saving…"
 msgstr "Saving…"
@@ -284,12 +353,17 @@ msgid "Setup failed"
 msgstr "Setup failed"
 
 #: src/App.tsx
+#: src/routes/spots.tsx
 msgid "Spots"
 msgstr "Spots"
 
 #: src/App.tsx
 msgid "Staff"
 msgstr "Staff"
+
+#: src/routes/spots.tsx
+msgid "Status"
+msgstr "Status"
 
 #: ../../packages/pos-ui/src/routes/session-detail.tsx
 msgid "Submit"

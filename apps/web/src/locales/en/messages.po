@@ -76,6 +76,11 @@ msgstr "Error"
 msgid "Error: {0}"
 msgstr "Error: {0}"
 
+#. placeholder {0}: billing.min_charge.toLocaleString("vi-VN")
+#: ../../packages/pos-ui/src/components/room-clock.tsx
+msgid "Included period: {0}đ"
+msgstr "Included period: {0}đ"
+
 #: ../../packages/pos-ui/src/routes/payment.tsx
 msgid "Includes room time charge:"
 msgstr "Includes room time charge:"

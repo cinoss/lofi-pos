@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { z } from "zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Trans } from "@lingui/react/macro";
+import { t } from "@lingui/core/macro";
 import { useApiClient } from "@lofi-pos/pos-ui";
 import { Button } from "@lofi-pos/ui/components/button";
 import { Spot, SpotInput } from "@lofi-pos/shared";
@@ -12,14 +14,24 @@ interface FormState {
   id: number | null;
   name: string;
   kind: "room" | "table";
-  hourly_rate: string; // empty = null
+  // Billing fields are stored as strings while editing; only forwarded
+  // when kind === "room". For tables they're ignored and the request
+  // sends `billing_config: null`.
+  hourly_rate: string;
+  bucket_minutes: string;
+  included_minutes: string;
+  min_charge: string;
   parent_id: string;
 }
+
 const empty: FormState = {
   id: null,
   name: "",
   kind: "table",
   hourly_rate: "",
+  bucket_minutes: "1",
+  included_minutes: "0",
+  min_charge: "0",
   parent_id: "",
 };
 
@@ -36,10 +48,19 @@ export function SpotsRoute() {
 
   const upsert = useMutation({
     mutationFn: async (f: FormState) => {
+      const billing_config =
+        f.kind === "room"
+          ? {
+              hourly_rate: Number(f.hourly_rate || "0"),
+              bucket_minutes: Number(f.bucket_minutes || "1"),
+              included_minutes: Number(f.included_minutes || "0"),
+              min_charge: Number(f.min_charge || "0"),
+            }
+          : null;
       const payload = SpotInput.parse({
         name: f.name,
         kind: f.kind,
-        hourly_rate: f.hourly_rate.trim() === "" ? null : Number(f.hourly_rate),
+        billing_config,
         parent_id: f.parent_id.trim() === "" ? null : Number(f.parent_id),
       });
       if (f.id == null) {
@@ -66,8 +87,12 @@ export function SpotsRoute() {
   return (
     <div>
       <div className="mb-4 flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Spots</h1>
-        <Button onClick={() => setForm(empty)}>+ New Spot</Button>
+        <h1 className="text-2xl font-semibold">
+          <Trans>Spots</Trans>
+        </h1>
+        <Button onClick={() => setForm(empty)}>
+          <Trans>+ New Spot</Trans>
+        </Button>
       </div>
       {list.isLoading && <p>Loading…</p>}
       {list.error && <p className="text-red-600">{String(list.error)}</p>}
@@ -75,11 +100,21 @@ export function SpotsRoute() {
         <thead className="border-b bg-gray-100 text-left text-sm">
           <tr>
             <th className="p-3">ID</th>
-            <th className="p-3">Name</th>
-            <th className="p-3">Kind</th>
-            <th className="p-3">Hourly</th>
-            <th className="p-3">Parent</th>
-            <th className="p-3">Status</th>
+            <th className="p-3">
+              <Trans>Name</Trans>
+            </th>
+            <th className="p-3">
+              <Trans>Kind</Trans>
+            </th>
+            <th className="p-3">
+              <Trans>Hourly</Trans>
+            </th>
+            <th className="p-3">
+              <Trans>Parent</Trans>
+            </th>
+            <th className="p-3">
+              <Trans>Status</Trans>
+            </th>
             <th className="p-3" />
           </tr>
         </thead>
@@ -89,7 +124,9 @@ export function SpotsRoute() {
               <td className="p-3">{s.id}</td>
               <td className="p-3">{s.name}</td>
               <td className="p-3">{s.kind}</td>
-              <td className="p-3">{s.hourly_rate ?? "—"}</td>
+              <td className="p-3">
+                {s.billing_config?.hourly_rate?.toLocaleString("vi-VN") ?? "—"}
+              </td>
               <td className="p-3">{s.parent_id ?? "—"}</td>
               <td className="p-3">{s.status}</td>
               <td className="p-3 text-right">
@@ -101,12 +138,19 @@ export function SpotsRoute() {
                       id: s.id,
                       name: s.name,
                       kind: s.kind,
-                      hourly_rate: s.hourly_rate?.toString() ?? "",
+                      hourly_rate:
+                        s.billing_config?.hourly_rate?.toString() ?? "",
+                      bucket_minutes:
+                        s.billing_config?.bucket_minutes?.toString() ?? "1",
+                      included_minutes:
+                        s.billing_config?.included_minutes?.toString() ?? "0",
+                      min_charge:
+                        s.billing_config?.min_charge?.toString() ?? "0",
                       parent_id: s.parent_id?.toString() ?? "",
                     })
                   }
                 >
-                  Edit
+                  <Trans>Edit</Trans>
                 </Button>
                 <Button
                   size="sm"
@@ -116,7 +160,7 @@ export function SpotsRoute() {
                     if (window.confirm(`Delete ${s.name}?`)) remove.mutate(s.id);
                   }}
                 >
-                  Delete
+                  <Trans>Delete</Trans>
                 </Button>
               </td>
             </tr>
@@ -126,7 +170,7 @@ export function SpotsRoute() {
 
       <Modal
         open={form != null}
-        title={form?.id == null ? "New spot" : `Edit spot #${form?.id}`}
+        title={form?.id == null ? t`New spot` : t`Edit spot #${form?.id}`}
         onClose={() => {
           setForm(null);
           setError(null);
@@ -141,7 +185,7 @@ export function SpotsRoute() {
             }}
           >
             <label className="block text-sm">
-              Name
+              <Trans>Name</Trans>
               <input
                 className="mt-1 block w-full rounded border px-2 py-1"
                 value={form.name}
@@ -150,7 +194,7 @@ export function SpotsRoute() {
               />
             </label>
             <label className="block text-sm">
-              Kind
+              <Trans>Kind</Trans>
               <select
                 className="mt-1 block w-full rounded border px-2 py-1"
                 value={form.kind}
@@ -162,17 +206,62 @@ export function SpotsRoute() {
                 <option value="room">room</option>
               </select>
             </label>
+            {form.kind === "room" && (
+              <>
+                <label className="block text-sm">
+                  <Trans>Hourly rate (VND/h)</Trans>
+                  <input
+                    className="mt-1 block w-full rounded border px-2 py-1"
+                    value={form.hourly_rate}
+                    onChange={(e) =>
+                      setForm({ ...form, hourly_rate: e.target.value })
+                    }
+                    inputMode="numeric"
+                    min={0}
+                    required
+                  />
+                </label>
+                <label className="block text-sm">
+                  <Trans>Bucket (minutes)</Trans>
+                  <input
+                    className="mt-1 block w-full rounded border px-2 py-1"
+                    value={form.bucket_minutes}
+                    onChange={(e) =>
+                      setForm({ ...form, bucket_minutes: e.target.value })
+                    }
+                    inputMode="numeric"
+                    min={1}
+                    required
+                  />
+                </label>
+                <label className="block text-sm">
+                  <Trans>Included minutes</Trans>
+                  <input
+                    className="mt-1 block w-full rounded border px-2 py-1"
+                    value={form.included_minutes}
+                    onChange={(e) =>
+                      setForm({ ...form, included_minutes: e.target.value })
+                    }
+                    inputMode="numeric"
+                    min={0}
+                  />
+                </label>
+                <label className="block text-sm">
+                  <Trans>Minimum charge (VND)</Trans>
+                  <input
+                    className="mt-1 block w-full rounded border px-2 py-1"
+                    value={form.min_charge}
+                    onChange={(e) =>
+                      setForm({ ...form, min_charge: e.target.value })
+                    }
+                    inputMode="numeric"
+                    min={0}
+                  />
+                </label>
+              </>
+            )}
             <label className="block text-sm">
-              Hourly rate (cents) — leave blank for none
-              <input
-                className="mt-1 block w-full rounded border px-2 py-1"
-                value={form.hourly_rate}
-                onChange={(e) => setForm({ ...form, hourly_rate: e.target.value })}
-                inputMode="numeric"
-              />
-            </label>
-            <label className="block text-sm">
-              Parent ID — leave blank for top-level
+              <Trans>Parent ID — leave blank for top-level</Trans>
               <input
                 className="mt-1 block w-full rounded border px-2 py-1"
                 value={form.parent_id}
@@ -190,10 +279,10 @@ export function SpotsRoute() {
                   setError(null);
                 }}
               >
-                Cancel
+                <Trans>Cancel</Trans>
               </Button>
               <Button type="submit" disabled={upsert.isPending}>
-                Save
+                <Trans>Save</Trans>
               </Button>
             </div>
           </form>
