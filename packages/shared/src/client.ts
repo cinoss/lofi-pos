@@ -11,6 +11,13 @@ export interface ApiClientOptions {
 export class ApiClient {
   constructor(private opts: ApiClientOptions) {}
 
+  /** Base URL the client was configured with. Useful for building external
+   *  links (e.g. opening admin SPA in a new tab) against the same backend
+   *  origin even when the page itself is served from a different dev port. */
+  get baseUrl(): string {
+    return this.opts.baseUrl;
+  }
+
   async request<O extends z.ZodTypeAny>(
     method: "GET" | "POST" | "PUT" | "DELETE",
     path: string,

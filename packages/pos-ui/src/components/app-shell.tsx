@@ -4,19 +4,21 @@ import { Button } from "@lofi-pos/ui/components/button";
 import { useAuth } from "../auth-context";
 import { useSettings } from "../settings-context";
 import { useIdleTimer } from "../idle-tracker";
+import { useApiClient } from "../api-context";
 import { ConnectionStatus } from "./connection-status";
 
 export function AppShell() {
   const { claims, lock, logout } = useAuth();
+  const apiClient = useApiClient();
   const settings = useSettings();
   const idleMs = (settings?.idle_lock_minutes ?? 10) * 60 * 1000;
   useIdleTimer(idleMs, lock);
 
-  // Admin SPA is served by the same axum at /ui/admin/. Owner-only link
-  // opens it in a new window/tab — under Tauri this surfaces the OS browser
-  // for venues with a real keyboard; on tablet (web build) it opens a new
-  // browser tab on the same device.
-  const adminUrl = `${window.location.origin}/ui/admin/`;
+  // Admin SPA is served by the cashier axum at /ui/admin/ (proxied to vite
+  // in dev). Use the api client's baseUrl rather than window.location.origin
+  // — under Tauri dev, location.origin is the cashier vite (:1420), but
+  // /ui/admin/ lives on the cashier axum (:7878 / VITE_API_BASE).
+  const adminUrl = `${apiClient.baseUrl}/ui/admin/`;
 
   return (
     <div className="min-h-screen flex flex-col">
