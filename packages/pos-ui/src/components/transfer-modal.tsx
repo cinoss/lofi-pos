@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { z } from "zod";
 import { Trans } from "@lingui/react/macro";
-import { Spot } from "@lofi-pos/shared";
+import { Spot, SessionState } from "@lofi-pos/shared";
 import { Button } from "@lofi-pos/ui/components/button";
 import { useApiClient } from "../api-context";
 
@@ -15,10 +15,11 @@ interface TransferModalProps {
 }
 
 /**
- * Spot picker for `POST /sessions/:id/transfer`. Filters server-side `/spots`
- * to idle, non-current candidates so the staffer only sees somewhere a
- * session could legally move to. Transfer itself (with override flow) is
- * driven from session-detail; this modal is just the chooser.
+ * Spot picker for `POST /sessions/:id/transfer`. Cross-references active
+ * sessions (NOT master.spot.status, which isn't maintained by session
+ * lifecycle) to exclude occupied spots, plus the current spot. Transfer
+ * itself (with override flow) is driven from session-detail; this modal
+ * is just the chooser.
  */
 export function TransferModal({
   currentSpotId,
@@ -31,9 +32,17 @@ export function TransferModal({
     queryKey: ["spots"],
     queryFn: () => apiClient.get("/spots", z.array(Spot)),
   });
+  const { data: activeSessions } = useQuery({
+    queryKey: ["sessions", "active"],
+    queryFn: () => apiClient.get("/sessions/active", z.array(SessionState)),
+  });
 
+  const occupiedBy = new Map<number, string>();
+  for (const s of activeSessions ?? []) {
+    if (s.status === "Open") occupiedBy.set(s.spot.id, s.session_id);
+  }
   const candidates = (spots ?? []).filter(
-    (s) => s.id !== currentSpotId && s.status === "idle",
+    (s) => s.id !== currentSpotId && !occupiedBy.has(s.id),
   );
 
   return (
