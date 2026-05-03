@@ -162,7 +162,7 @@ mod tests {
             spot: SpotRef::Room {
                 id: 1,
                 name: "R1".into(),
-                hourly_rate: 50_000,
+                billing: crate::domain::spot::RoomBilling { hourly_rate: 50_000, bucket_minutes: 1, included_minutes: 0, min_charge: 0 },
             },
             opened_by: opener,
             customer_label: Some("VIP".into()),
@@ -409,7 +409,7 @@ mod tests {
                 from: SpotRef::Room {
                     id: 1,
                     name: "R1".into(),
-                    hourly_rate: 50_000,
+                    billing: crate::domain::spot::RoomBilling { hourly_rate: 50_000, bucket_minutes: 1, included_minutes: 0, min_charge: 0 },
                 },
                 to: SpotRef::Table {
                     id: 7,

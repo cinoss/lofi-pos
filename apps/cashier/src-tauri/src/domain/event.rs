@@ -135,7 +135,7 @@ mod tests {
             spot: SpotRef::Room {
                 id: 1,
                 name: "VIP-1".into(),
-                hourly_rate: 100_000,
+                billing: crate::domain::spot::RoomBilling { hourly_rate: 100_000, bucket_minutes: 1, included_minutes: 0, min_charge: 0 },
             },
             opened_by: 42,
             customer_label: Some("VIP1".into()),

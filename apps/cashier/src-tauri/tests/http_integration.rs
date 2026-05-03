@@ -12,6 +12,7 @@ use cashier_lib::services::event_service::EventService;
 use cashier_lib::services::locking::KeyMutex;
 use cashier_lib::store::aggregate_store::AggregateStore;
 use cashier_lib::store::events::EventStore;
+use cashier_lib::domain::spot::RoomBilling;
 use cashier_lib::store::master::{Master, SpotKind};
 use cashier_lib::time::test_support::MockClock;
 use cashier_lib::time::Clock;
@@ -58,8 +59,18 @@ async fn boot_rig() -> Rig {
         let staff_hash = hash_pin(&staff_pin).unwrap();
         m.create_staff("Server", &staff_hash, Role::Staff, None)
             .unwrap();
-        m.create_spot("R1", SpotKind::Room, Some(50_000), None)
-            .unwrap()
+        m.create_spot(
+            "R1",
+            SpotKind::Room,
+            Some(RoomBilling {
+                hourly_rate: 50_000,
+                bucket_minutes: 1,
+                included_minutes: 0,
+                min_charge: 0,
+            }),
+            None,
+        )
+        .unwrap()
     };
 
     let key_manager = Arc::new(cashier_lib::services::key_manager::KeyManager::new(

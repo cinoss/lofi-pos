@@ -148,7 +148,12 @@ async fn admin_spot_crud_owner_can_create_update_delete() {
         .json(&json!({
             "name": "VIP-1",
             "kind": "room",
-            "hourly_rate": 100_000,
+            "billing_config": {
+                "hourly_rate": 100_000,
+                "bucket_minutes": 1,
+                "included_minutes": 0,
+                "min_charge": 0,
+            },
             "parent_id": null,
         }))
         .send()
@@ -182,7 +187,12 @@ async fn admin_spot_crud_owner_can_create_update_delete() {
         .json(&json!({
             "name": "VIP-1-renamed",
             "kind": "room",
-            "hourly_rate": 200_000,
+            "billing_config": {
+                "hourly_rate": 200_000,
+                "bucket_minutes": 1,
+                "included_minutes": 0,
+                "min_charge": 0,
+            },
             "parent_id": null,
         }))
         .send()
@@ -192,7 +202,7 @@ async fn admin_spot_crud_owner_can_create_update_delete() {
         .await
         .unwrap();
     assert_eq!(updated["name"], "VIP-1-renamed");
-    assert_eq!(updated["hourly_rate"], 200_000);
+    assert_eq!(updated["billing_config"]["hourly_rate"], 200_000);
 
     // DELETE
     let resp = rig
@@ -214,7 +224,9 @@ async fn admin_spot_create_forbidden_for_cashier() {
         .post(format!("{}/admin/spots", rig.base_url))
         .header("authorization", format!("Bearer {token}"))
         .json(&json!({
-            "name": "X", "kind": "room", "hourly_rate": 1, "parent_id": null,
+            "name": "X", "kind": "room",
+            "billing_config": {"hourly_rate": 1, "bucket_minutes": 1, "included_minutes": 0, "min_charge": 0},
+            "parent_id": null,
         }))
         .send()
         .await

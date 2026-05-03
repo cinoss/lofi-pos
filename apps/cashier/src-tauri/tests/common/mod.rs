@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use cashier_lib::domain::event::{OrderItemSpec, Route};
-use cashier_lib::domain::spot::SpotRef;
+use cashier_lib::domain::spot::{RoomBilling, SpotRef};
 use cashier_lib::http::broadcast::EventNotice;
 
 /// Build a discardable broadcast channel for test rigs that don't care
@@ -16,7 +16,12 @@ pub fn room(id: i64) -> SpotRef {
     SpotRef::Room {
         id,
         name: format!("R{id}"),
-        hourly_rate: 50_000,
+        billing: RoomBilling {
+            hourly_rate: 50_000,
+            bucket_minutes: 1,
+            included_minutes: 0,
+            min_charge: 0,
+        },
     }
 }
 

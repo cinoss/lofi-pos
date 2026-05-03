@@ -12,6 +12,7 @@ use crate::auth::token::TokenClaims;
 use crate::error::{AppError, AppResult};
 use crate::http::auth_layer::AuthCtx;
 use crate::http::error_layer::AppErrorResponse;
+use crate::domain::spot::RoomBilling;
 use crate::store::master::{Product, Spot, SpotKind};
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
@@ -73,7 +74,7 @@ pub fn router() -> Router<Arc<AppState>> {
 pub struct SpotInput {
     pub name: String,
     pub kind: SpotKind,
-    pub hourly_rate: Option<i64>,
+    pub billing_config: Option<RoomBilling>,
     pub parent_id: Option<i64>,
 }
 
@@ -99,7 +100,7 @@ async fn create_spot(
     let master = state.master.clone();
     let spot = tokio::task::spawn_blocking(move || -> AppResult<Spot> {
         let m = master.lock().unwrap();
-        let id = m.create_spot(&input.name, input.kind, input.hourly_rate, input.parent_id)?;
+        let id = m.create_spot(&input.name, input.kind, input.billing_config.clone(), input.parent_id)?;
         m.get_spot(id)?.ok_or(AppError::NotFound)
     })
     .await
@@ -119,7 +120,7 @@ async fn update_spot(
     let spot = tokio::task::spawn_blocking(move || -> AppResult<Spot> {
         let m = master.lock().unwrap();
         let updated =
-            m.update_spot(id, &input.name, input.kind, input.hourly_rate, input.parent_id)?;
+            m.update_spot(id, &input.name, input.kind, input.billing_config.clone(), input.parent_id)?;
         if !updated {
             return Err(AppError::NotFound);
         }

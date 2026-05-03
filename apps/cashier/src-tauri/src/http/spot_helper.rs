@@ -5,17 +5,16 @@ use crate::store::master::{Spot, SpotKind};
 use std::sync::Arc;
 
 /// Resolve a Master `Spot` row into a `SpotRef` (snapshot for event payload).
-/// For tables with a `parent_id`, looks up the parent room to populate
-/// `room_name`. Same logic as the deleted `resolve_spot_ref` Tauri command;
-/// extracted here so the upcoming session HTTP routes can share it.
+/// For rooms, snapshots the current `billing_config`. For tables with a
+/// `parent_id`, looks up the parent room to populate `room_name`.
 pub fn build_spot_ref(state: &Arc<AppState>, spot: Spot) -> AppResult<SpotRef> {
     Ok(match spot.kind {
         SpotKind::Room => SpotRef::Room {
             id: spot.id,
             name: spot.name,
-            hourly_rate: spot
-                .hourly_rate
-                .ok_or_else(|| AppError::Validation("room missing rate".into()))?,
+            billing: spot
+                .billing_config
+                .ok_or_else(|| AppError::Validation("room missing billing_config".into()))?,
         },
         SpotKind::Table => {
             let (room_id, room_name) = if let Some(pid) = spot.parent_id {
