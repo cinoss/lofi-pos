@@ -64,7 +64,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
             config: governor_conf,
         });
 
-    Router::new()
+    let api = Router::new()
         .merge(login_only)
         .merge(crate::http::routes::auth::router_unrated())
         .merge(crate::http::routes::catalog::router())
@@ -77,11 +77,11 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         // yet to authorize). Mounted on the same un-rated branch as the rest.
         // Both handlers self-gate on `compute_needs_setup`.
         .merge(crate::http::routes::setup::router())
-        .with_state(state)
-        // Admin SPA static mount. Lives at `/ui/admin/*`; `/admin/*` is the
-        // JSON API. SPA fallback inside `static_admin::router` returns
-        // index.html so client-side routing works.
-        .nest("/ui/admin", crate::http::static_admin::router(admin_dist))
+        .with_state(state);
+    // Admin SPA mount. Either ServeDir (static) or vite proxy (dev). Attached
+    // top-level by `mount` rather than via nest to avoid an axum nest+fallback
+    // edge case on the trailing-slash-only request (`/ui/admin/`).
+    crate::http::static_admin::mount(api, admin_dist)
         .layer(
             CorsLayer::new()
                 .allow_origin(Any)

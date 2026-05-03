@@ -13,31 +13,44 @@
 
 use axum::{
     body::Body,
-    extract::{Request, State},
+    extract::Request,
     http::{HeaderMap, HeaderValue, StatusCode, Uri},
     response::Response,
     routing::any,
     Router,
 };
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::OnceLock;
 use tower_http::services::{ServeDir, ServeFile};
 
-/// Build an axum Router that mounts the admin SPA. Caller `nest`s it under
-/// `/ui/admin`. Picks proxy vs static based on `LOFI_ADMIN_DEV_URL`.
-pub fn router(admin_dist: PathBuf) -> Router {
+/// Cached at first mount call so the proxy handler doesn't re-read the env
+/// var on every request, and so that `mount` can be called from a typed
+/// `Router<Arc<AppState>>` chain without forcing the proxy state into the
+/// shared AppState.
+static UPSTREAM: OnceLock<String> = OnceLock::new();
+
+/// Mount the admin SPA on the given top-level Router. Picks proxy vs static
+/// based on `LOFI_ADMIN_DEV_URL`. We attach top-level routes (not `nest`)
+/// because axum 0.7's `nest("/ui/admin", inner)` has an edge case where the
+/// inner router's `fallback` doesn't fire for the trailing-slash-only case
+/// (`/ui/admin/`) when the inner request path is empty/`/`.
+pub fn mount<S: Clone + Send + Sync + 'static>(
+    router: Router<S>,
+    admin_dist: PathBuf,
+) -> Router<S> {
     if let Some(upstream) = dev_upstream() {
         tracing::info!(upstream = %upstream, "admin SPA: proxying to vite dev");
-        // `fallback` instead of explicit routes: covers the trailing-slash,
-        // no-slash, and deep-path variants uniformly. axum's nest() strips
-        // the mount prefix before dispatch, so an empty inner path is
-        // possible too.
-        Router::new()
-            .fallback(any(proxy_handler))
-            .with_state(Arc::new(upstream))
+        let _ = UPSTREAM.set(upstream);
+        router
+            .route("/ui/admin", any(proxy_handler))
+            .route("/ui/admin/", any(proxy_handler))
+            .route("/ui/admin/*path", any(proxy_handler))
     } else {
         let index = admin_dist.join("index.html");
-        Router::new().fallback_service(ServeDir::new(admin_dist).fallback(ServeFile::new(index)))
+        router.nest_service(
+            "/ui/admin",
+            ServeDir::new(admin_dist).fallback(ServeFile::new(index)),
+        )
     }
 }
 
@@ -52,31 +65,20 @@ fn dev_upstream() -> Option<String> {
     Some(trimmed.to_string())
 }
 
-async fn proxy_handler(
-    State(upstream): State<Arc<String>>,
-    req: Request,
-) -> Result<Response, StatusCode> {
-    // axum's `nest("/ui/admin", ...)` strips the mount prefix before
-    // dispatch — req.uri().path() arrives as "/" or "/assets/foo.js"
-    // even though the client asked for "/ui/admin/" or
-    // "/ui/admin/assets/foo.js". Vite is configured with
-    // `base: "/ui/admin/"` so we must put the prefix back when forwarding.
+async fn proxy_handler(req: Request) -> Result<Response, StatusCode> {
+    let upstream = UPSTREAM.get().ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
+    // Top-level routes preserve the full /ui/admin... path, so we forward
+    // verbatim. Vite is configured with `base: "/ui/admin/"`. Bare /ui/admin
+    // is normalized to /ui/admin/ so vite's index handler matches.
     let original_uri: &Uri = req.uri();
-    let path = original_uri.path();
-    let query = original_uri.query().map(|q| format!("?{q}")).unwrap_or_default();
-    // After nest("/ui/admin", ...) strips the prefix, possible inner paths:
-    //   "/"            (request was /ui/admin/)
-    //   ""             (request was /ui/admin   — fallback path can be empty)
-    //   "/assets/x.js" (deep request)
-    // Vite expects the full /ui/admin/... path because of `base: "/ui/admin/"`.
-    // Re-prefix and ensure the prefix-only case keeps the trailing slash so
-    // vite's index handler matches.
-    let full_path = if path.is_empty() || path == "/" {
+    let raw_path = original_uri.path();
+    let path = if raw_path == "/ui/admin" {
         "/ui/admin/".to_string()
     } else {
-        format!("/ui/admin{path}")
+        raw_path.to_string()
     };
-    let url = format!("{upstream}{full_path}{query}");
+    let query = original_uri.query().map(|q| format!("?{q}")).unwrap_or_default();
+    let url = format!("{upstream}{path}{query}");
 
     let method = req.method().clone();
     let headers = req.headers().clone();
