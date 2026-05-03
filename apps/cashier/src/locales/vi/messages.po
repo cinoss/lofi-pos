@@ -148,6 +148,10 @@ msgstr "Không có bàn / phòng trống."
 #~ msgstr "Không còn bàn/phòng trống."
 
 #: ../../packages/pos-ui/src/routes/spot-picker.tsx
+msgid "No spots configured yet. Open the admin app and add at least one room or table."
+msgstr "Chưa có bàn / phòng nào. Mở ứng dụng quản trị và thêm ít nhất một phòng hoặc bàn."
+
+#: ../../packages/pos-ui/src/routes/spot-picker.tsx
 msgid "occupied"
 msgstr "đang có khách"
 

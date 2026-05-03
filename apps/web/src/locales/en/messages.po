@@ -140,6 +140,10 @@ msgstr "No idle spots available."
 #~ msgstr "No idle spots."
 
 #: ../../packages/pos-ui/src/routes/spot-picker.tsx
+msgid "No spots configured yet. Open the admin app and add at least one room or table."
+msgstr "No spots configured yet. Open the admin app and add at least one room or table."
+
+#: ../../packages/pos-ui/src/routes/spot-picker.tsx
 msgid "occupied"
 msgstr "occupied"
 

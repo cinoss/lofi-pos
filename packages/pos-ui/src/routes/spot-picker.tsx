@@ -82,11 +82,18 @@ export function SpotPickerRoute() {
           );
         })}
       </div>
-      {free.length === 0 && (
+      {spots.length === 0 ? (
+        <p className="text-gray-500 mt-4">
+          <Trans>
+            No spots configured yet. Open the admin app and add at least one
+            room or table.
+          </Trans>
+        </p>
+      ) : free.length === 0 ? (
         <p className="text-gray-500 mt-4">
           <Trans>No idle spots — all spots have an open session.</Trans>
         </p>
-      )}
+      ) : null}
     </div>
   );
 }
