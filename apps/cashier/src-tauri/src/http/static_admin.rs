@@ -53,15 +53,17 @@ async fn proxy_handler(
     State(upstream): State<Arc<String>>,
     req: Request,
 ) -> Result<Response, StatusCode> {
-    // The router is mounted under /ui/admin/*; the upstream vite dev also
-    // serves with `base: /ui/admin/`, so the request URI's full path (with
-    // /ui/admin/ prefix) maps 1:1.
+    // axum's `nest("/ui/admin", ...)` strips the mount prefix before
+    // dispatch — req.uri().path() arrives as "/" or "/assets/foo.js"
+    // even though the client asked for "/ui/admin/" or
+    // "/ui/admin/assets/foo.js". Vite is configured with
+    // `base: "/ui/admin/"` so we must put the prefix back when forwarding.
     let original_uri: &Uri = req.uri();
-    let path_and_query = original_uri
-        .path_and_query()
-        .map(|x| x.as_str())
-        .unwrap_or("");
-    let url = format!("{upstream}{path_and_query}");
+    let path = original_uri.path();
+    let query = original_uri.query().map(|q| format!("?{q}")).unwrap_or_default();
+    // Path always starts with '/'. Joining "/ui/admin" + "/" gives "/ui/admin/".
+    let full_path = format!("/ui/admin{}", if path == "/" { "/" } else { path });
+    let url = format!("{upstream}{full_path}{query}");
 
     let method = req.method().clone();
     let headers = req.headers().clone();
