@@ -227,6 +227,12 @@ async fn http_full_session_lifecycle() {
         .unwrap();
     let session_id = session["session_id"].as_str().unwrap().to_string();
     assert_eq!(session["status"], "Open");
+    // open_session must snapshot the spot's billing_config into SpotRef::Room.
+    assert_eq!(session["spot"]["kind"], "room");
+    assert_eq!(session["spot"]["billing"]["hourly_rate"], 50_000);
+    assert_eq!(session["spot"]["billing"]["bucket_minutes"], 1);
+    assert_eq!(session["spot"]["billing"]["included_minutes"], 0);
+    assert_eq!(session["spot"]["billing"]["min_charge"], 0);
 
     // Place payment directly (orders need product seed; skip ordering for
     // this lifecycle to keep test focused on the wire path). Subtotal is

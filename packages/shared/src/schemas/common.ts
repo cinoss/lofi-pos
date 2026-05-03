@@ -9,12 +9,25 @@ export type Route = z.infer<typeof Route>;
 export const SpotKind = z.enum(["room", "table"]);
 export type SpotKind = z.infer<typeof SpotKind>;
 
+// Snapshot of a room's billing policy. Captured into SpotRef::Room at
+// session-open / transfer time so historical sessions bill against the
+// policy that was in effect even after admin edits.
+export const RoomBilling = z
+  .object({
+    hourly_rate: z.number().int().nonnegative(),
+    bucket_minutes: z.number().int().positive(),
+    included_minutes: z.number().int().nonnegative(),
+    min_charge: z.number().int().nonnegative(),
+  })
+  .strict();
+export type RoomBilling = z.infer<typeof RoomBilling>;
+
 export const SpotRef = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("room"),
     id: z.number().int(),
     name: z.string(),
-    hourly_rate: z.number().int(),
+    billing: RoomBilling,
   }).strict(),
   z.object({
     kind: z.literal("table"),
