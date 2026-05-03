@@ -14,11 +14,13 @@ msgstr ""
 "Plural-Forms: \n"
 
 #. placeholder {0}: s.order_ids.length
+#: ../../packages/pos-ui/src/routes/history.tsx
 #: ../../packages/pos-ui/src/routes/sessions.tsx
 msgid "{0, plural, one {# order} other {# orders}}"
 msgstr "{0, plural, one {# order} other {# orders}}"
 
 #. placeholder {0}: String(s.status)
+#: ../../packages/pos-ui/src/routes/history.tsx
 #: ../../packages/pos-ui/src/routes/sessions.tsx
 msgid "{0}"
 msgstr "{0}"
@@ -81,6 +83,10 @@ msgstr "Cash"
 msgid "Charge"
 msgstr "Charge"
 
+#: ../../packages/pos-ui/src/routes/history.tsx
+msgid "Closed sessions still in the local event store. Older history is available in the daily reports stored by the bouncer service."
+msgstr "Closed sessions still in the local event store. Older history is available in the daily reports stored by the bouncer service."
+
 #: src/routes/setup.tsx
 msgid "Complete setup"
 msgstr "Complete setup"
@@ -123,6 +129,7 @@ msgid "Error"
 msgstr "Error"
 
 #. placeholder {0}: String(error)
+#: ../../packages/pos-ui/src/routes/history.tsx
 #: ../../packages/pos-ui/src/routes/sessions.tsx
 msgid "Error: {0}"
 msgstr "Error: {0}"
@@ -130,6 +137,11 @@ msgstr "Error: {0}"
 #: src/routes/setup.tsx
 msgid "First-time setup"
 msgstr "First-time setup"
+
+#: ../../packages/pos-ui/src/components/app-shell.tsx
+#: ../../packages/pos-ui/src/routes/history.tsx
+msgid "History"
+msgstr "History"
 
 #: src/routes/spots.tsx
 msgid "Hourly"
@@ -157,6 +169,7 @@ msgstr "Includes room time charge:"
 msgid "Kind"
 msgstr "Kind"
 
+#: ../../packages/pos-ui/src/routes/history.tsx
 #: ../../packages/pos-ui/src/routes/session-detail.tsx
 #: ../../packages/pos-ui/src/routes/sessions.tsx
 #: ../../packages/pos-ui/src/routes/spot-picker.tsx
@@ -223,6 +236,10 @@ msgstr "New spot"
 msgid "No active sessions."
 msgstr "No active sessions."
 
+#: ../../packages/pos-ui/src/routes/history.tsx
+msgid "No history yet — closed sessions will show up here."
+msgstr "No history yet — closed sessions will show up here."
+
 #: ../../packages/pos-ui/src/routes/spot-picker.tsx
 msgid "No idle spots — all spots have an open session."
 msgstr "No idle spots — all spots have an open session."
@@ -279,6 +296,7 @@ msgstr "Owner PIN (min 6) *"
 msgid "Owner role required"
 msgstr "Owner role required"
 
+#: ../../packages/pos-ui/src/routes/history.tsx
 #: ../../packages/pos-ui/src/routes/sessions.tsx
 msgid "Paid"
 msgstr "Paid"
@@ -323,6 +341,7 @@ msgstr "Return how many?"
 msgid "Return to the cashier and click <0>I've finished setup</0> to continue. You can now also sign in to this admin console with the Owner PIN you just set."
 msgstr "Return to the cashier and click <0>I've finished setup</0> to continue. You can now also sign in to this admin console with the Owner PIN you just set."
 
+#: ../../packages/pos-ui/src/routes/history.tsx
 #: ../../packages/pos-ui/src/routes/sessions.tsx
 msgid "Room"
 msgstr "Room"
@@ -381,6 +400,7 @@ msgstr "Submit"
 msgid "Subtotal (VND)"
 msgstr "Subtotal (VND)"
 
+#: ../../packages/pos-ui/src/routes/history.tsx
 #: ../../packages/pos-ui/src/routes/sessions.tsx
 msgid "Table"
 msgstr "Table"

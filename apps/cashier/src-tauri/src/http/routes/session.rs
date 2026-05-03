@@ -57,6 +57,7 @@ pub fn router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/sessions", post(open_session))
         .route("/sessions/active", get(list_active))
+        .route("/sessions/history", get(list_history))
         .route("/sessions/:id", get(get_session))
         .route("/sessions/:id/close", post(close_session))
         .route("/sessions/:id/transfer", post(transfer_session))
@@ -70,6 +71,18 @@ async fn list_active(
 ) -> Result<Json<Vec<SessionState>>, AppErrorResponse> {
     let s = state.clone();
     let r = tokio::task::spawn_blocking(move || s.commands.list_active_sessions())
+        .await
+        .map_err(|e| AppErrorResponse(AppError::Internal(format!("join: {e}"))))?
+        .map_err(AppErrorResponse)?;
+    Ok(Json(r))
+}
+
+async fn list_history(
+    State(state): State<Arc<AppState>>,
+    AuthCtx(_): AuthCtx,
+) -> Result<Json<Vec<SessionState>>, AppErrorResponse> {
+    let s = state.clone();
+    let r = tokio::task::spawn_blocking(move || s.commands.list_history_sessions())
         .await
         .map_err(|e| AppErrorResponse(AppError::Internal(format!("join: {e}"))))?
         .map_err(AppErrorResponse)?;

@@ -13,6 +13,7 @@ export * from "./components/transfer-modal";
 export * from "./routes/login";
 export * from "./routes/lock";
 export * from "./routes/sessions";
+export * from "./routes/history";
 export * from "./routes/spot-picker";
 export * from "./routes/session-detail";
 export * from "./routes/payment";

@@ -5,6 +5,7 @@ import {
   LoginRoute,
   LockRoute,
   SessionsRoute,
+  HistoryRoute,
   SpotPickerRoute,
   SessionDetailRoute,
   PaymentRoute,
@@ -30,6 +31,7 @@ export default function App() {
     <Routes>
       <Route element={<AppShell />}>
         <Route path="/sessions" element={<SessionsRoute />} />
+        <Route path="/history" element={<HistoryRoute />} />
         <Route path="/spots" element={<SpotPickerRoute />} />
         <Route path="/sessions/:id" element={<SessionDetailRoute />} />
         <Route path="/sessions/:id/payment" element={<PaymentRoute />} />

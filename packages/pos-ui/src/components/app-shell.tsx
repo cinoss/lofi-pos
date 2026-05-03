@@ -31,6 +31,9 @@ export function AppShell() {
           <Link to="/spots" className="text-sm hover:underline">
             <Trans>Open New</Trans>
           </Link>
+          <Link to="/history" className="text-sm hover:underline">
+            <Trans>History</Trans>
+          </Link>
           {claims?.role === "owner" && (
             <a
               href={adminUrl}

@@ -14,11 +14,13 @@ msgstr ""
 "Plural-Forms: \n"
 
 #. placeholder {0}: s.order_ids.length
+#: ../../packages/pos-ui/src/routes/history.tsx
 #: ../../packages/pos-ui/src/routes/sessions.tsx
 msgid "{0, plural, one {# order} other {# orders}}"
 msgstr "{0, plural, other {# đơn}}"
 
 #. placeholder {0}: String(s.status)
+#: ../../packages/pos-ui/src/routes/history.tsx
 #: ../../packages/pos-ui/src/routes/sessions.tsx
 msgid "{0}"
 msgstr "{0}"
@@ -63,6 +65,10 @@ msgstr "Tiền mặt"
 msgid "Charge"
 msgstr "Thanh toán"
 
+#: ../../packages/pos-ui/src/routes/history.tsx
+msgid "Closed sessions still in the local event store. Older history is available in the daily reports stored by the bouncer service."
+msgstr "Các phiên đã đóng còn trong bộ nhớ sự kiện cục bộ. Lịch sử cũ hơn nằm trong báo cáo hằng ngày do dịch vụ bouncer lưu giữ."
+
 #: ../../packages/pos-ui/src/routes/payment.tsx
 msgid "Discount %"
 msgstr "Giảm giá %"
@@ -76,6 +82,7 @@ msgid "Error"
 msgstr "Lỗi"
 
 #. placeholder {0}: String(error)
+#: ../../packages/pos-ui/src/routes/history.tsx
 #: ../../packages/pos-ui/src/routes/sessions.tsx
 msgid "Error: {0}"
 msgstr "Lỗi: {0}"
@@ -83,6 +90,11 @@ msgstr "Lỗi: {0}"
 #: src/routes/setup-required.tsx
 msgid "First-time setup required"
 msgstr "Cần cài đặt lần đầu"
+
+#: ../../packages/pos-ui/src/components/app-shell.tsx
+#: ../../packages/pos-ui/src/routes/history.tsx
+msgid "History"
+msgstr "Lịch sử"
 
 #: src/routes/setup-required.tsx
 msgid "I've finished setup"
@@ -97,6 +109,7 @@ msgstr "Bao gồm: {0}đ"
 msgid "Includes room time charge:"
 msgstr "Đã bao gồm tiền phòng:"
 
+#: ../../packages/pos-ui/src/routes/history.tsx
 #: ../../packages/pos-ui/src/routes/session-detail.tsx
 #: ../../packages/pos-ui/src/routes/sessions.tsx
 #: ../../packages/pos-ui/src/routes/spot-picker.tsx
@@ -139,6 +152,10 @@ msgstr "Lỗi mạng"
 msgid "No active sessions."
 msgstr "Không có phiên nào đang mở."
 
+#: ../../packages/pos-ui/src/routes/history.tsx
+msgid "No history yet — closed sessions will show up here."
+msgstr "Chưa có lịch sử — phiên đã đóng sẽ xuất hiện ở đây."
+
 #: ../../packages/pos-ui/src/routes/spot-picker.tsx
 msgid "No idle spots — all spots have an open session."
 msgstr "Không còn bàn / phòng trống — tất cả đang có phiên mở."
@@ -179,6 +196,7 @@ msgstr "Mở phiên mới"
 msgid "Open new session →"
 msgstr "Mở phiên mới →"
 
+#: ../../packages/pos-ui/src/routes/history.tsx
 #: ../../packages/pos-ui/src/routes/sessions.tsx
 msgid "Paid"
 msgstr "Đã thanh toán"
@@ -191,6 +209,7 @@ msgstr "Trả hàng"
 msgid "Return how many?"
 msgstr "Trả lại bao nhiêu?"
 
+#: ../../packages/pos-ui/src/routes/history.tsx
 #: ../../packages/pos-ui/src/routes/sessions.tsx
 msgid "Room"
 msgstr "Phòng"
@@ -220,6 +239,7 @@ msgstr "Gửi"
 msgid "Subtotal (VND)"
 msgstr "Tạm tính (VND)"
 
+#: ../../packages/pos-ui/src/routes/history.tsx
 #: ../../packages/pos-ui/src/routes/sessions.tsx
 msgid "Table"
 msgstr "Bàn"

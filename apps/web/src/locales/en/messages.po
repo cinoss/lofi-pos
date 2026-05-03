@@ -14,11 +14,13 @@ msgstr ""
 "Plural-Forms: \n"
 
 #. placeholder {0}: s.order_ids.length
+#: ../../packages/pos-ui/src/routes/history.tsx
 #: ../../packages/pos-ui/src/routes/sessions.tsx
 msgid "{0, plural, one {# order} other {# orders}}"
 msgstr "{0, plural, one {# order} other {# orders}}"
 
 #. placeholder {0}: String(s.status)
+#: ../../packages/pos-ui/src/routes/history.tsx
 #: ../../packages/pos-ui/src/routes/sessions.tsx
 msgid "{0}"
 msgstr "{0}"
@@ -63,6 +65,10 @@ msgstr "Cash"
 msgid "Charge"
 msgstr "Charge"
 
+#: ../../packages/pos-ui/src/routes/history.tsx
+msgid "Closed sessions still in the local event store. Older history is available in the daily reports stored by the bouncer service."
+msgstr "Closed sessions still in the local event store. Older history is available in the daily reports stored by the bouncer service."
+
 #: ../../packages/pos-ui/src/routes/payment.tsx
 msgid "Discount %"
 msgstr "Discount %"
@@ -76,9 +82,15 @@ msgid "Error"
 msgstr "Error"
 
 #. placeholder {0}: String(error)
+#: ../../packages/pos-ui/src/routes/history.tsx
 #: ../../packages/pos-ui/src/routes/sessions.tsx
 msgid "Error: {0}"
 msgstr "Error: {0}"
+
+#: ../../packages/pos-ui/src/components/app-shell.tsx
+#: ../../packages/pos-ui/src/routes/history.tsx
+msgid "History"
+msgstr "History"
 
 #. placeholder {0}: billing.min_charge.toLocaleString("vi-VN")
 #: ../../packages/pos-ui/src/components/room-clock.tsx
@@ -89,6 +101,7 @@ msgstr "Included period: {0}đ"
 msgid "Includes room time charge:"
 msgstr "Includes room time charge:"
 
+#: ../../packages/pos-ui/src/routes/history.tsx
 #: ../../packages/pos-ui/src/routes/session-detail.tsx
 #: ../../packages/pos-ui/src/routes/sessions.tsx
 #: ../../packages/pos-ui/src/routes/spot-picker.tsx
@@ -131,6 +144,10 @@ msgstr "Network error"
 msgid "No active sessions."
 msgstr "No active sessions."
 
+#: ../../packages/pos-ui/src/routes/history.tsx
+msgid "No history yet — closed sessions will show up here."
+msgstr "No history yet — closed sessions will show up here."
+
 #: ../../packages/pos-ui/src/routes/spot-picker.tsx
 msgid "No idle spots — all spots have an open session."
 msgstr "No idle spots — all spots have an open session."
@@ -167,6 +184,7 @@ msgstr "Open new session"
 msgid "Open new session →"
 msgstr "Open new session →"
 
+#: ../../packages/pos-ui/src/routes/history.tsx
 #: ../../packages/pos-ui/src/routes/sessions.tsx
 msgid "Paid"
 msgstr "Paid"
@@ -179,6 +197,7 @@ msgstr "Return"
 msgid "Return how many?"
 msgstr "Return how many?"
 
+#: ../../packages/pos-ui/src/routes/history.tsx
 #: ../../packages/pos-ui/src/routes/sessions.tsx
 msgid "Room"
 msgstr "Room"
@@ -204,6 +223,7 @@ msgstr "Submit"
 msgid "Subtotal (VND)"
 msgstr "Subtotal (VND)"
 
+#: ../../packages/pos-ui/src/routes/history.tsx
 #: ../../packages/pos-ui/src/routes/sessions.tsx
 msgid "Table"
 msgstr "Table"

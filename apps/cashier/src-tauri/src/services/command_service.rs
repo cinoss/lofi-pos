@@ -246,6 +246,28 @@ impl CommandService {
             .collect())
     }
 
+    /// Sessions with any non-Open status (Closed, Merged, Split). Surfaced by
+    /// the cashier history page so staff can review what happened earlier in
+    /// the shift. Bounded by what's still in the in-memory aggregate store —
+    /// EOD deletes events for the closed business day, so historical sessions
+    /// from earlier days won't appear here.
+    pub fn list_history_sessions(&self) -> AppResult<Vec<crate::domain::session::SessionState>> {
+        let mut out: Vec<_> = self
+            .store
+            .sessions
+            .iter()
+            .filter(|r| r.value().status != crate::domain::session::SessionStatus::Open)
+            .map(|r| r.value().clone())
+            .collect();
+        // Newest first by opened_at_ms; ties broken by session_id for stability.
+        out.sort_by(|a, b| {
+            b.opened_at_ms
+                .cmp(&a.opened_at_ms)
+                .then_with(|| a.session_id.cmp(&b.session_id))
+        });
+        Ok(out)
+    }
+
     /// Sum live subtotal across every order placed under `session_id`,
     /// including orders inherited via `apply(SessionMerged)` from absorbed
     /// source sessions. Returns `NotFound` if the session is not in memory.

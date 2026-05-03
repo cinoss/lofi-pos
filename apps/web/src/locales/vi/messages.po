@@ -14,11 +14,13 @@ msgstr ""
 "Plural-Forms: \n"
 
 #. placeholder {0}: s.order_ids.length
+#: ../../packages/pos-ui/src/routes/history.tsx
 #: ../../packages/pos-ui/src/routes/sessions.tsx
 msgid "{0, plural, one {# order} other {# orders}}"
 msgstr ""
 
 #. placeholder {0}: String(s.status)
+#: ../../packages/pos-ui/src/routes/history.tsx
 #: ../../packages/pos-ui/src/routes/sessions.tsx
 msgid "{0}"
 msgstr ""
@@ -63,6 +65,10 @@ msgstr ""
 msgid "Charge"
 msgstr ""
 
+#: ../../packages/pos-ui/src/routes/history.tsx
+msgid "Closed sessions still in the local event store. Older history is available in the daily reports stored by the bouncer service."
+msgstr "Các phiên đã đóng còn trong bộ nhớ sự kiện cục bộ. Lịch sử cũ hơn nằm trong báo cáo hằng ngày do dịch vụ bouncer lưu giữ."
+
 #: ../../packages/pos-ui/src/routes/payment.tsx
 msgid "Discount %"
 msgstr ""
@@ -76,9 +82,15 @@ msgid "Error"
 msgstr ""
 
 #. placeholder {0}: String(error)
+#: ../../packages/pos-ui/src/routes/history.tsx
 #: ../../packages/pos-ui/src/routes/sessions.tsx
 msgid "Error: {0}"
 msgstr ""
+
+#: ../../packages/pos-ui/src/components/app-shell.tsx
+#: ../../packages/pos-ui/src/routes/history.tsx
+msgid "History"
+msgstr "Lịch sử"
 
 #. placeholder {0}: billing.min_charge.toLocaleString("vi-VN")
 #: ../../packages/pos-ui/src/components/room-clock.tsx
@@ -89,6 +101,7 @@ msgstr "Bao gồm: {0}đ"
 msgid "Includes room time charge:"
 msgstr "Đã bao gồm tiền phòng:"
 
+#: ../../packages/pos-ui/src/routes/history.tsx
 #: ../../packages/pos-ui/src/routes/session-detail.tsx
 #: ../../packages/pos-ui/src/routes/sessions.tsx
 #: ../../packages/pos-ui/src/routes/spot-picker.tsx
@@ -131,6 +144,10 @@ msgstr ""
 msgid "No active sessions."
 msgstr ""
 
+#: ../../packages/pos-ui/src/routes/history.tsx
+msgid "No history yet — closed sessions will show up here."
+msgstr "Chưa có lịch sử — phiên đã đóng sẽ xuất hiện ở đây."
+
 #: ../../packages/pos-ui/src/routes/spot-picker.tsx
 msgid "No idle spots — all spots have an open session."
 msgstr ""
@@ -167,6 +184,7 @@ msgstr ""
 msgid "Open new session →"
 msgstr ""
 
+#: ../../packages/pos-ui/src/routes/history.tsx
 #: ../../packages/pos-ui/src/routes/sessions.tsx
 msgid "Paid"
 msgstr ""
@@ -179,6 +197,7 @@ msgstr "Trả hàng"
 msgid "Return how many?"
 msgstr "Trả lại bao nhiêu?"
 
+#: ../../packages/pos-ui/src/routes/history.tsx
 #: ../../packages/pos-ui/src/routes/sessions.tsx
 msgid "Room"
 msgstr ""
@@ -204,6 +223,7 @@ msgstr "Gửi"
 msgid "Subtotal (VND)"
 msgstr ""
 
+#: ../../packages/pos-ui/src/routes/history.tsx
 #: ../../packages/pos-ui/src/routes/sessions.tsx
 msgid "Table"
 msgstr ""
