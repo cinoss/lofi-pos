@@ -9,5 +9,12 @@ export default defineConfig({
   base: "/ui/admin/",
   plugins: [react({ babel: { plugins: ["macros"] } }), tailwindcss()],
   clearScreen: false,
-  server: { port: 1421, strictPort: true },
+  server: {
+    port: 1421,
+    strictPort: true,
+    // HMR ws connects DIRECTLY to vite even though the page is loaded
+    // through the cashier's axum proxy at :7878/ui/admin/. Without this,
+    // the client tries ws://localhost:7878/ which our proxy doesn't upgrade.
+    hmr: { clientPort: 1421, host: "localhost", protocol: "ws" },
+  },
 });

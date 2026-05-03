@@ -81,7 +81,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         // Admin SPA static mount. Lives at `/ui/admin/*`; `/admin/*` is the
         // JSON API. SPA fallback inside `static_admin::router` returns
         // index.html so client-side routing works.
-        .nest_service("/ui/admin", crate::http::static_admin::service(admin_dist))
+        .nest("/ui/admin", crate::http::static_admin::router(admin_dist))
         .layer(
             CorsLayer::new()
                 .allow_origin(Any)
