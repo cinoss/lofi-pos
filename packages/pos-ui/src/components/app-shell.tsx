@@ -20,6 +20,32 @@ export function AppShell() {
   // /ui/admin/ lives on the cashier axum (:7878 / VITE_API_BASE).
   const adminUrl = `${apiClient.baseUrl}/ui/admin/`;
 
+  // Tauri webview swallows <a target="_blank"> by default — clicking the
+  // link does nothing. Use the opener plugin to surface the OS browser
+  // when available, fall back to window.open for plain web (tablet) builds.
+  // Resolved via a string variable so neither vite nor tsc try to type-check
+  // the optional @tauri-apps/plugin-opener dep (pos-ui doesn't depend on it
+  // directly; cashier installs it, web app doesn't need it).
+  const handleAdminClick = async (e: React.MouseEvent<HTMLAnchorElement>) => {
+    e.preventDefault();
+    const isTauri =
+      typeof window !== "undefined" &&
+      ("__TAURI_INTERNALS__" in window || "__TAURI__" in window);
+    if (isTauri) {
+      try {
+        const moduleName = "@tauri-apps/plugin-opener";
+        const mod = (await import(/* @vite-ignore */ moduleName)) as {
+          openUrl: (u: string) => Promise<void>;
+        };
+        await mod.openUrl(adminUrl);
+        return;
+      } catch (err) {
+        console.warn("tauri opener unavailable, falling back", err);
+      }
+    }
+    window.open(adminUrl, "_blank", "noopener");
+  };
+
   return (
     <div className="min-h-screen flex flex-col">
       <header className="flex items-center justify-between border-b bg-white px-6 py-3">
@@ -41,6 +67,7 @@ export function AppShell() {
               href={adminUrl}
               target="_blank"
               rel="noreferrer"
+              onClick={(e) => void handleAdminClick(e)}
               className="text-sm hover:underline"
             >
               <Trans>Admin</Trans>

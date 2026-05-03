@@ -28,9 +28,12 @@ use tower_http::services::{ServeDir, ServeFile};
 pub fn router(admin_dist: PathBuf) -> Router {
     if let Some(upstream) = dev_upstream() {
         tracing::info!(upstream = %upstream, "admin SPA: proxying to vite dev");
+        // `fallback` instead of explicit routes: covers the trailing-slash,
+        // no-slash, and deep-path variants uniformly. axum's nest() strips
+        // the mount prefix before dispatch, so an empty inner path is
+        // possible too.
         Router::new()
-            .route("/", any(proxy_handler))
-            .route("/*path", any(proxy_handler))
+            .fallback(any(proxy_handler))
             .with_state(Arc::new(upstream))
     } else {
         let index = admin_dist.join("index.html");
@@ -61,8 +64,18 @@ async fn proxy_handler(
     let original_uri: &Uri = req.uri();
     let path = original_uri.path();
     let query = original_uri.query().map(|q| format!("?{q}")).unwrap_or_default();
-    // Path always starts with '/'. Joining "/ui/admin" + "/" gives "/ui/admin/".
-    let full_path = format!("/ui/admin{}", if path == "/" { "/" } else { path });
+    // After nest("/ui/admin", ...) strips the prefix, possible inner paths:
+    //   "/"            (request was /ui/admin/)
+    //   ""             (request was /ui/admin   — fallback path can be empty)
+    //   "/assets/x.js" (deep request)
+    // Vite expects the full /ui/admin/... path because of `base: "/ui/admin/"`.
+    // Re-prefix and ensure the prefix-only case keeps the trailing slash so
+    // vite's index handler matches.
+    let full_path = if path.is_empty() || path == "/" {
+        "/ui/admin/".to_string()
+    } else {
+        format!("/ui/admin{path}")
+    };
     let url = format!("{upstream}{full_path}{query}");
 
     let method = req.method().clone();
