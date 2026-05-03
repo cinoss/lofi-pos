@@ -140,6 +140,7 @@ msgstr "First-time setup"
 
 #: ../../packages/pos-ui/src/components/app-shell.tsx
 #: ../../packages/pos-ui/src/routes/history.tsx
+#: ../../packages/pos-ui/src/routes/session-detail.tsx
 msgid "History"
 msgstr "History"
 
@@ -309,6 +310,10 @@ msgstr "Parent"
 msgid "Parent ID — leave blank for top-level"
 msgstr "Parent ID — leave blank for top-level"
 
+#: ../../packages/pos-ui/src/routes/payment.tsx
+msgid "Payment"
+msgstr "Payment"
+
 #: src/routes/setup.tsx
 msgid "Phone"
 msgstr "Phone"
@@ -364,6 +369,8 @@ msgid "Session is {0}."
 msgstr "Session is {0}."
 
 #: ../../packages/pos-ui/src/components/app-shell.tsx
+#: ../../packages/pos-ui/src/routes/payment.tsx
+#: ../../packages/pos-ui/src/routes/session-detail.tsx
 msgid "Sessions"
 msgstr "Sessions"
 

@@ -23,6 +23,7 @@ import { useApiClient } from "../api-context";
 import { OverrideModal } from "../components/override-modal";
 import { RoomClock } from "../components/room-clock";
 import { TransferModal } from "../components/transfer-modal";
+import { Breadcrumbs } from "../components/breadcrumbs";
 
 /** UI-side identity for a specific order line, used to drive cancel/return modals. */
 interface ItemRef {
@@ -273,8 +274,24 @@ export function SessionDetailRoute() {
 
   if (!session) return <div>Loading…</div>;
 
+  // History page brings closed sessions back into view; preserve the entry
+  // point in the breadcrumb when the user came from there. Otherwise
+  // default to /sessions.
+  const fromHistory = session.status !== "Open";
+  const crumbs = fromHistory
+    ? [
+        { label: <Trans>History</Trans>, to: "/history" },
+        { label: session.spot.name },
+      ]
+    : [
+        { label: <Trans>Sessions</Trans>, to: "/sessions" },
+        { label: session.spot.name },
+      ];
+
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <div>
+      <Breadcrumbs items={crumbs} />
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       <section>
         <h1 className="text-2xl font-semibold mb-2">{session.spot.name}</h1>
         <div className="text-sm text-gray-500 mb-4">
@@ -507,6 +524,7 @@ export function SessionDetailRoute() {
       {/* Reference t() so non-Trans literals still get extracted in the
           rare case we add interpolation later; harmless. */}
       <span className="sr-only">{t`Loading…`}</span>
+      </div>
     </div>
   );
 }

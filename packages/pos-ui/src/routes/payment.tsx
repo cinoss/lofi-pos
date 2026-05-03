@@ -8,6 +8,7 @@ import type { TakePaymentInput } from "@lofi-pos/shared";
 import { Button } from "@lofi-pos/ui/components/button";
 import { OverrideModal } from "../components/override-modal";
 import { computeRoomCharge } from "../components/room-clock";
+import { Breadcrumbs } from "../components/breadcrumbs";
 import { useApiClient } from "../api-context";
 
 export function PaymentRoute() {
@@ -117,6 +118,16 @@ export function PaymentRoute() {
 
   return (
     <div className="max-w-md mx-auto">
+      <Breadcrumbs
+        items={[
+          { label: <Trans>Sessions</Trans>, to: "/sessions" },
+          {
+            label: session?.spot.name ?? "…",
+            to: `/sessions/${sessionId}`,
+          },
+          { label: <Trans>Payment</Trans> },
+        ]}
+      />
       <h1 className="text-2xl font-semibold mb-4">
         <Trans>Take payment</Trans>
       </h1>

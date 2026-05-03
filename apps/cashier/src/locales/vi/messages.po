@@ -93,6 +93,7 @@ msgstr "Cần cài đặt lần đầu"
 
 #: ../../packages/pos-ui/src/components/app-shell.tsx
 #: ../../packages/pos-ui/src/routes/history.tsx
+#: ../../packages/pos-ui/src/routes/session-detail.tsx
 msgid "History"
 msgstr "Lịch sử"
 
@@ -201,6 +202,10 @@ msgstr "Mở phiên mới →"
 msgid "Paid"
 msgstr "Đã thanh toán"
 
+#: ../../packages/pos-ui/src/routes/payment.tsx
+msgid "Payment"
+msgstr "Thanh toán"
+
 #: ../../packages/pos-ui/src/routes/session-detail.tsx
 msgid "Return"
 msgstr "Trả hàng"
@@ -228,6 +233,8 @@ msgid "Session is {0}."
 msgstr "Phiên đang ở trạng thái {0}."
 
 #: ../../packages/pos-ui/src/components/app-shell.tsx
+#: ../../packages/pos-ui/src/routes/payment.tsx
+#: ../../packages/pos-ui/src/routes/session-detail.tsx
 msgid "Sessions"
 msgstr "Phiên"
 

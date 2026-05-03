@@ -89,6 +89,7 @@ msgstr ""
 
 #: ../../packages/pos-ui/src/components/app-shell.tsx
 #: ../../packages/pos-ui/src/routes/history.tsx
+#: ../../packages/pos-ui/src/routes/session-detail.tsx
 msgid "History"
 msgstr "Lịch sử"
 
@@ -189,6 +190,10 @@ msgstr ""
 msgid "Paid"
 msgstr ""
 
+#: ../../packages/pos-ui/src/routes/payment.tsx
+msgid "Payment"
+msgstr "Thanh toán"
+
 #: ../../packages/pos-ui/src/routes/session-detail.tsx
 msgid "Return"
 msgstr "Trả hàng"
@@ -212,6 +217,8 @@ msgid "Session is {0}."
 msgstr ""
 
 #: ../../packages/pos-ui/src/components/app-shell.tsx
+#: ../../packages/pos-ui/src/routes/payment.tsx
+#: ../../packages/pos-ui/src/routes/session-detail.tsx
 msgid "Sessions"
 msgstr ""
 
