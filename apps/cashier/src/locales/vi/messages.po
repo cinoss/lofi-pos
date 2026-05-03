@@ -84,6 +84,11 @@ msgstr "Cần cài đặt lần đầu"
 msgid "I've finished setup"
 msgstr "Tôi đã hoàn tất"
 
+#. placeholder {0}: billing.min_charge.toLocaleString("vi-VN")
+#: ../../packages/pos-ui/src/components/room-clock.tsx
+msgid "Included period: {0}đ"
+msgstr "Bao gồm: {0}đ"
+
 #: ../../packages/pos-ui/src/routes/payment.tsx
 msgid "Includes room time charge:"
 msgstr "Đã bao gồm tiền phòng:"

@@ -1,12 +1,13 @@
 import { z } from "zod";
-import { Role, Route, SpotKind } from "./common";
+import { Role, Route, RoomBilling, SpotKind } from "./common";
 
 // ----------- Spots -----------
 export const SpotInput = z
   .object({
     name: z.string().min(1),
     kind: SpotKind,
-    hourly_rate: z.number().int().nullable(),
+    // Required for kind=room, must be null for kind=table. Backend re-validates.
+    billing_config: RoomBilling.nullable(),
     parent_id: z.number().int().nullable(),
   })
   .strict();

@@ -1,4 +1,5 @@
 use crate::acl::Role;
+use crate::domain::spot::RoomBilling;
 use crate::error::{AppError, AppResult};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
@@ -41,9 +42,17 @@ pub struct Spot {
     pub id: i64,
     pub name: String,
     pub kind: SpotKind,
-    pub hourly_rate: Option<i64>,
+    /// Room billing policy snapshot (JSON in the DB). NULL for tables.
+    pub billing_config: Option<RoomBilling>,
     pub parent_id: Option<i64>,
     pub status: String,
+}
+
+impl Spot {
+    /// Convenience accessor for callers that only need the parsed billing.
+    pub fn billing(&self) -> Option<&RoomBilling> {
+        self.billing_config.as_ref()
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -206,19 +215,15 @@ impl Master {
         &self,
         name: &str,
         kind: SpotKind,
-        hourly_rate: Option<i64>,
+        billing_config: Option<RoomBilling>,
         parent_id: Option<i64>,
     ) -> AppResult<i64> {
-        if kind == SpotKind::Table && hourly_rate.is_some() {
-            return Err(AppError::Validation("table cannot have hourly_rate".into()));
-        }
-        if kind == SpotKind::Room && hourly_rate.is_none() {
-            return Err(AppError::Validation("room must have hourly_rate".into()));
-        }
+        validate_billing(kind, billing_config.as_ref())?;
+        let billing_json = serialize_billing(billing_config.as_ref())?;
         self.conn.execute(
-            "INSERT INTO spot(name, kind, hourly_rate, parent_id, status)
+            "INSERT INTO spot(name, kind, billing_config, parent_id, status)
              VALUES(?1, ?2, ?3, ?4, 'idle')",
-            params![name, kind.as_str(), hourly_rate, parent_id],
+            params![name, kind.as_str(), billing_json, parent_id],
         )?;
         Ok(self.conn.last_insert_rowid())
     }
@@ -227,7 +232,7 @@ impl Master {
         Ok(self
             .conn
             .query_row(
-                "SELECT id, name, kind, hourly_rate, parent_id, status FROM spot WHERE id = ?1",
+                "SELECT id, name, kind, billing_config, parent_id, status FROM spot WHERE id = ?1",
                 params![id],
                 row_to_spot,
             )
@@ -240,19 +245,15 @@ impl Master {
         id: i64,
         name: &str,
         kind: SpotKind,
-        hourly_rate: Option<i64>,
+        billing_config: Option<RoomBilling>,
         parent_id: Option<i64>,
     ) -> AppResult<bool> {
-        if kind == SpotKind::Table && hourly_rate.is_some() {
-            return Err(AppError::Validation("table cannot have hourly_rate".into()));
-        }
-        if kind == SpotKind::Room && hourly_rate.is_none() {
-            return Err(AppError::Validation("room must have hourly_rate".into()));
-        }
+        validate_billing(kind, billing_config.as_ref())?;
+        let billing_json = serialize_billing(billing_config.as_ref())?;
         let n = self.conn.execute(
-            "UPDATE spot SET name = ?1, kind = ?2, hourly_rate = ?3, parent_id = ?4
+            "UPDATE spot SET name = ?1, kind = ?2, billing_config = ?3, parent_id = ?4
              WHERE id = ?5",
-            params![name, kind.as_str(), hourly_rate, parent_id, id],
+            params![name, kind.as_str(), billing_json, parent_id, id],
         )?;
         Ok(n > 0)
     }
@@ -268,7 +269,7 @@ impl Master {
     /// List all spots, ordered by id.
     pub fn list_spots(&self) -> AppResult<Vec<Spot>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, name, kind, hourly_rate, parent_id, status FROM spot ORDER BY id ASC",
+            "SELECT id, name, kind, billing_config, parent_id, status FROM spot ORDER BY id ASC",
         )?;
         let rows = stmt
             .query_map([], row_to_spot)?
@@ -570,14 +571,59 @@ fn row_to_spot(r: &rusqlite::Row<'_>) -> rusqlite::Result<Spot> {
             format!("bad spot kind: {kind_str}").into(),
         )
     })?;
+    let billing_json: Option<String> = r.get(3)?;
+    let billing_config = match billing_json {
+        Some(s) => Some(serde_json::from_str::<RoomBilling>(&s).map_err(|e| {
+            rusqlite::Error::FromSqlConversionFailure(
+                3,
+                rusqlite::types::Type::Text,
+                format!("bad billing_config json: {e}").into(),
+            )
+        })?),
+        None => None,
+    };
     Ok(Spot {
         id: r.get(0)?,
         name: r.get(1)?,
         kind,
-        hourly_rate: r.get(3)?,
+        billing_config,
         parent_id: r.get(4)?,
         status: r.get(5)?,
     })
+}
+
+/// Validate that rooms have a billing config and tables don't.
+fn validate_billing(kind: SpotKind, billing: Option<&RoomBilling>) -> AppResult<()> {
+    match (kind, billing) {
+        (SpotKind::Room, None) => Err(AppError::Validation(
+            "room must have billing_config".into(),
+        )),
+        (SpotKind::Table, Some(_)) => Err(AppError::Validation(
+            "table cannot have billing_config".into(),
+        )),
+        (SpotKind::Room, Some(b)) => {
+            if b.bucket_minutes < 1 {
+                return Err(AppError::Validation("bucket_minutes must be >= 1".into()));
+            }
+            if b.hourly_rate < 0 {
+                return Err(AppError::Validation("hourly_rate must be >= 0".into()));
+            }
+            if b.min_charge < 0 {
+                return Err(AppError::Validation("min_charge must be >= 0".into()));
+            }
+            Ok(())
+        }
+        (SpotKind::Table, None) => Ok(()),
+    }
+}
+
+fn serialize_billing(b: Option<&RoomBilling>) -> AppResult<Option<String>> {
+    match b {
+        Some(v) => Ok(Some(serde_json::to_string(v).map_err(|e| {
+            AppError::Validation(format!("billing serialization failed: {e}"))
+        })?)),
+        None => Ok(None),
+    }
 }
 
 fn row_to_staff(r: &rusqlite::Row<'_>) -> rusqlite::Result<Staff> {
@@ -782,27 +828,52 @@ mod catalog_tests {
 mod spot_tests {
     use super::*;
 
+    fn billing(rate: i64) -> RoomBilling {
+        RoomBilling {
+            hourly_rate: rate,
+            bucket_minutes: 1,
+            included_minutes: 0,
+            min_charge: 0,
+        }
+    }
+
     #[test]
-    fn create_room_with_rate_succeeds() {
+    fn create_room_with_billing_succeeds() {
         let m = Master::open_in_memory().unwrap();
         let id = m
-            .create_spot("VIP-1", SpotKind::Room, Some(100_000), None)
+            .create_spot("VIP-1", SpotKind::Room, Some(billing(100_000)), None)
             .unwrap();
         let s = m.get_spot(id).unwrap().unwrap();
         assert_eq!(s.kind, SpotKind::Room);
-        assert_eq!(s.hourly_rate, Some(100_000));
+        assert_eq!(s.billing_config.as_ref().map(|b| b.hourly_rate), Some(100_000));
         assert_eq!(s.name, "VIP-1");
     }
 
     #[test]
-    fn create_table_with_rate_rejected() {
+    fn round_trip_full_billing_json() {
         let m = Master::open_in_memory().unwrap();
-        let r = m.create_spot("T1", SpotKind::Table, Some(50_000), None);
+        let b = RoomBilling {
+            hourly_rate: 150_000,
+            bucket_minutes: 60,
+            included_minutes: 60,
+            min_charge: 150_000,
+        };
+        let id = m
+            .create_spot("R-old-rules", SpotKind::Room, Some(b.clone()), None)
+            .unwrap();
+        let s = m.get_spot(id).unwrap().unwrap();
+        assert_eq!(s.billing_config, Some(b));
+    }
+
+    #[test]
+    fn create_table_with_billing_rejected() {
+        let m = Master::open_in_memory().unwrap();
+        let r = m.create_spot("T1", SpotKind::Table, Some(billing(50_000)), None);
         assert!(matches!(r, Err(AppError::Validation(_))));
     }
 
     #[test]
-    fn create_room_without_rate_rejected() {
+    fn create_room_without_billing_rejected() {
         let m = Master::open_in_memory().unwrap();
         let r = m.create_spot("R-bad", SpotKind::Room, None, None);
         assert!(matches!(r, Err(AppError::Validation(_))));
@@ -812,7 +883,7 @@ mod spot_tests {
     fn get_spot_by_id() {
         let m = Master::open_in_memory().unwrap();
         let id = m
-            .create_spot("R1", SpotKind::Room, Some(60_000), None)
+            .create_spot("R1", SpotKind::Room, Some(billing(60_000)), None)
             .unwrap();
         let s = m.get_spot(id).unwrap().unwrap();
         assert_eq!(s.id, id);
@@ -820,16 +891,24 @@ mod spot_tests {
     }
 
     #[test]
+    fn table_with_null_billing_round_trips() {
+        let m = Master::open_in_memory().unwrap();
+        let id = m.create_spot("T-null", SpotKind::Table, None, None).unwrap();
+        let s = m.get_spot(id).unwrap().unwrap();
+        assert!(s.billing_config.is_none());
+    }
+
+    #[test]
     fn list_spots_ordered() {
         let m = Master::open_in_memory().unwrap();
         let r1 = m
-            .create_spot("R1", SpotKind::Room, Some(50_000), None)
+            .create_spot("R1", SpotKind::Room, Some(billing(50_000)), None)
             .unwrap();
         let _t1 = m
             .create_spot("T1", SpotKind::Table, None, Some(r1))
             .unwrap();
         let _r2 = m
-            .create_spot("R2", SpotKind::Room, Some(80_000), None)
+            .create_spot("R2", SpotKind::Room, Some(billing(80_000)), None)
             .unwrap();
         let v = m.list_spots().unwrap();
         assert_eq!(v.len(), 3);

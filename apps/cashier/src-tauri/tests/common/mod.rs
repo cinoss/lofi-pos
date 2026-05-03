@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use cashier_lib::domain::event::{OrderItemSpec, Route};
-use cashier_lib::domain::spot::SpotRef;
+use cashier_lib::domain::spot::{RoomBilling, SpotRef};
 use cashier_lib::http::broadcast::EventNotice;
 
 /// Build a discardable broadcast channel for test rigs that don't care
@@ -13,10 +13,21 @@ pub fn dummy_broadcast() -> tokio::sync::broadcast::Sender<EventNotice> {
 }
 
 pub fn room(id: i64) -> SpotRef {
+    room_with_rate(id, 50_000)
+}
+
+/// Build a `SpotRef::Room` with an explicit hourly_rate so transfer tests can
+/// distinguish source vs. destination billing snapshots.
+pub fn room_with_rate(id: i64, hourly_rate: i64) -> SpotRef {
     SpotRef::Room {
         id,
         name: format!("R{id}"),
-        hourly_rate: 50_000,
+        billing: RoomBilling {
+            hourly_rate,
+            bucket_minutes: 1,
+            included_minutes: 0,
+            min_charge: 0,
+        },
     }
 }
 

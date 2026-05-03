@@ -15,7 +15,8 @@ use cashier_lib::store::master::Master;
 use cashier_lib::time::test_support::MockClock;
 use cashier_lib::time::Clock;
 use chrono::FixedOffset;
-use common::{item, table};
+use cashier_lib::domain::spot::SpotRef;
+use common::{item, room_with_rate, table};
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
@@ -113,6 +114,72 @@ fn transfer_session_happy_path() {
     assert!(state.spot.is_table());
     assert_eq!(state.spot.id(), 5);
     assert_eq!(state.status, SessionStatus::Open);
+}
+
+/// Transferring between two rooms must snapshot the DESTINATION room's
+/// billing into `SessionState.spot`, not preserve the source's. Otherwise a
+/// transfer to a higher-rate room would still bill at the lower rate.
+#[test]
+fn transfer_session_snapshots_destination_room_billing() {
+    let (cs, auth) = rig();
+    let (_, claims) = auth.login("999999").unwrap();
+
+    let room_a = room_with_rate(101, 50_000);
+    let room_b = room_with_rate(202, 150_000);
+
+    // Open on RoomA → snapshot carries 50k.
+    let session_id = Uuid::new_v4().to_string();
+    let (open_state, _) = cs
+        .execute(
+            &claims,
+            Action::OpenSession,
+            PolicyCtx::default(),
+            "xfer-bill-open",
+            "open_session",
+            &session_id,
+            DomainEvent::SessionOpened {
+                spot: room_a.clone(),
+                opened_by: claims.staff_id,
+                customer_label: None,
+                team: None,
+            },
+            None,
+            |c| c.load_session(&session_id).map(|o| o.unwrap()),
+        )
+        .unwrap();
+    match &open_state.spot {
+        SpotRef::Room { billing, .. } => assert_eq!(billing.hourly_rate, 50_000),
+        _ => panic!("expected Room spot after open"),
+    }
+
+    // Transfer to RoomB → snapshot must flip to 150k (destination billing).
+    let (xfer_state, _) = cs
+        .execute(
+            &claims,
+            Action::TransferSession,
+            PolicyCtx::default(),
+            "xfer-bill-xfer",
+            "transfer_session",
+            &session_id,
+            DomainEvent::SessionTransferred {
+                from: room_a.clone(),
+                to: room_b.clone(),
+            },
+            None,
+            |c| c.load_session(&session_id).map(|o| o.unwrap()),
+        )
+        .unwrap();
+    match &xfer_state.spot {
+        SpotRef::Room { id, billing, .. } => {
+            assert_eq!(*id, 202, "spot must point at destination room");
+            assert_eq!(
+                billing.hourly_rate, 150_000,
+                "billing snapshot must be destination's, not source's"
+            );
+        }
+        _ => panic!("expected Room spot after transfer"),
+    }
+
 }
 
 #[test]

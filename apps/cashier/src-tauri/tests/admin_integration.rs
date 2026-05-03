@@ -148,7 +148,12 @@ async fn admin_spot_crud_owner_can_create_update_delete() {
         .json(&json!({
             "name": "VIP-1",
             "kind": "room",
-            "hourly_rate": 100_000,
+            "billing_config": {
+                "hourly_rate": 100_000,
+                "bucket_minutes": 1,
+                "included_minutes": 0,
+                "min_charge": 0,
+            },
             "parent_id": null,
         }))
         .send()
@@ -182,7 +187,12 @@ async fn admin_spot_crud_owner_can_create_update_delete() {
         .json(&json!({
             "name": "VIP-1-renamed",
             "kind": "room",
-            "hourly_rate": 200_000,
+            "billing_config": {
+                "hourly_rate": 200_000,
+                "bucket_minutes": 1,
+                "included_minutes": 0,
+                "min_charge": 0,
+            },
             "parent_id": null,
         }))
         .send()
@@ -192,7 +202,7 @@ async fn admin_spot_crud_owner_can_create_update_delete() {
         .await
         .unwrap();
     assert_eq!(updated["name"], "VIP-1-renamed");
-    assert_eq!(updated["hourly_rate"], 200_000);
+    assert_eq!(updated["billing_config"]["hourly_rate"], 200_000);
 
     // DELETE
     let resp = rig
@@ -214,12 +224,83 @@ async fn admin_spot_create_forbidden_for_cashier() {
         .post(format!("{}/admin/spots", rig.base_url))
         .header("authorization", format!("Bearer {token}"))
         .json(&json!({
-            "name": "X", "kind": "room", "hourly_rate": 1, "parent_id": null,
+            "name": "X", "kind": "room",
+            "billing_config": {"hourly_rate": 1, "bucket_minutes": 1, "included_minutes": 0, "min_charge": 0},
+            "parent_id": null,
         }))
         .send()
         .await
         .unwrap();
     assert_eq!(resp.status(), 401);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn admin_create_room_round_trips_billing() {
+    let rig = boot_admin_rig().await;
+    let token = login(&rig, &rig.owner_pin).await;
+    let bearer = format!("Bearer {token}");
+    let create: Value = rig
+        .client
+        .post(format!("{}/admin/spots", rig.base_url))
+        .header("authorization", &bearer)
+        .json(&json!({
+            "name": "OldRules",
+            "kind": "room",
+            "billing_config": {
+                "hourly_rate": 150_000,
+                "bucket_minutes": 60,
+                "included_minutes": 60,
+                "min_charge": 150_000,
+            },
+            "parent_id": null,
+        }))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(create["billing_config"]["bucket_minutes"], 60);
+    assert_eq!(create["billing_config"]["included_minutes"], 60);
+    assert_eq!(create["billing_config"]["min_charge"], 150_000);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn admin_create_table_with_billing_rejected() {
+    let rig = boot_admin_rig().await;
+    let token = login(&rig, &rig.owner_pin).await;
+    let resp = rig
+        .client
+        .post(format!("{}/admin/spots", rig.base_url))
+        .header("authorization", format!("Bearer {token}"))
+        .json(&json!({
+            "name": "T-bad", "kind": "table",
+            "billing_config": {"hourly_rate": 1, "bucket_minutes": 1, "included_minutes": 0, "min_charge": 0},
+            "parent_id": null,
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 400);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn admin_create_room_without_billing_rejected() {
+    let rig = boot_admin_rig().await;
+    let token = login(&rig, &rig.owner_pin).await;
+    let resp = rig
+        .client
+        .post(format!("{}/admin/spots", rig.base_url))
+        .header("authorization", format!("Bearer {token}"))
+        .json(&json!({
+            "name": "R-bad", "kind": "room",
+            "billing_config": null,
+            "parent_id": null,
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 400);
 }
 
 #[tokio::test(flavor = "multi_thread")]

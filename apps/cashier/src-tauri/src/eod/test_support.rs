@@ -16,7 +16,7 @@ use crate::auth::AuthService;
 use crate::bouncer::client::BouncerClient;
 use crate::bouncer::seed_cache::SeedCache;
 use crate::domain::event::{DomainEvent, OrderItemSpec, Route};
-use crate::domain::spot::SpotRef;
+use crate::domain::spot::{RoomBilling, SpotRef};
 use crate::services::command_service::CommandService;
 use crate::services::event_service::EventService;
 use crate::services::key_manager::KeyManager;
@@ -212,7 +212,12 @@ fn room(id: i64) -> SpotRef {
     SpotRef::Room {
         id,
         name: format!("R{id}"),
-        hourly_rate: 50_000,
+        billing: RoomBilling {
+            hourly_rate: 50_000,
+            bucket_minutes: 1,
+            included_minutes: 0,
+            min_charge: 0,
+        },
     }
 }
 

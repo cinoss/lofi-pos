@@ -1,11 +1,11 @@
 import { z } from "zod";
-import { Role, SpotKind } from "./common";
+import { Role, RoomBilling, SpotKind } from "./common";
 
 export const Spot = z.object({
   id: z.number().int(),
   name: z.string(),
   kind: SpotKind,
-  hourly_rate: z.number().int().nullable(),
+  billing_config: RoomBilling.nullable(),
   parent_id: z.number().int().nullable(),
   status: z.string(),
 }).strict();
