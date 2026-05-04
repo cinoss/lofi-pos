@@ -354,7 +354,7 @@ export function SessionDetailRoute() {
       // Chain into stage 2 immediately.
       finalizeMerge.mutate({ merge: next });
     },
-    onError: (e: unknown, vars) => {
+    onError: (e: unknown, _vars) => {
       if (e instanceof ApiError && e.code === "override_required") {
         setPendingOverride({
           kind: "merge_place_order",
