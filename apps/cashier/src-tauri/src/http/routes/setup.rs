@@ -156,6 +156,14 @@ async fn submit(
                  VALUES (?1, ?2, 'owner', NULL, ?3)",
                 rusqlite::params![body.owner_name, pin_hash, now],
             )?;
+            // Seed a "Room Time" product (kind=time) so merge can fold a
+            // source's room-time charge into the target as a line item.
+            // INSERT OR IGNORE keeps this defensive against re-runs.
+            tx.execute(
+                "INSERT OR IGNORE INTO product (name, price, route, kind) \
+                 VALUES ('Room Time', 0, 'none', 'time')",
+                [],
+            )?;
             Ok(())
         })?;
         Ok(())
