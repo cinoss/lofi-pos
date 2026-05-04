@@ -24,8 +24,9 @@ import { OverrideModal } from "../components/override-modal";
 import { RoomClock } from "../components/room-clock";
 import { TransferModal } from "../components/transfer-modal";
 import { MergeModal } from "../components/merge-modal";
+import { SplitModal, type SplitItem } from "../components/split-modal";
 import { Breadcrumbs } from "../components/breadcrumbs";
-import type { MergeSessionsInput } from "@lofi-pos/shared";
+import type { MergeSessionsInput, OpenSessionInput } from "@lofi-pos/shared";
 
 /** UI-side identity for a specific order line, used to drive cancel/return modals. */
 interface ItemRef {
@@ -41,7 +42,10 @@ type PendingOverride =
   | { kind: "return"; ref: ItemRef; qty: number; role: string }
   | { kind: "transfer"; toSpotId: number; role: string }
   | { kind: "merge_place_order"; role: string }
-  | { kind: "merge_finalize"; role: string };
+  | { kind: "merge_finalize"; role: string }
+  | { kind: "split_open"; role: string }
+  | { kind: "split_remove"; role: string; itemKey: string }
+  | { kind: "split_place_order"; role: string };
 
 /** Active merge attempt — both stages share these idempotency keys so retries
  *  (override prompt or banner recovery) dedupe at the backend. `orderPlaced`
@@ -58,6 +62,27 @@ interface PendingMerge {
   /** Synthesized line items to place on B (rebuilt once per attempt). */
   items: RawOrderItem[];
   orderPlaced: boolean;
+}
+
+/** Active split attempt. Idempotency keys are stable so retry/resume after
+ *  override or partial failure dedupes server-side. `removed` tracks which
+ *  source items have already had their cancel/return applied so a retry
+ *  doesn't double-deduct. */
+interface PendingSplit {
+  toSpotId: number;
+  items: SplitItem[];
+  /** Idempotency key for the open-session call. */
+  openKey: string;
+  /** Idempotency key per source item ("orderId#idx") for cancel/return. */
+  removeKeys: Record<string, string>;
+  /** Idempotency key for the place-order on N. */
+  placeKey: string;
+  /** Filled once N is created. */
+  newSessionId: string | null;
+  /** Set of "orderId#idx" already removed from source. */
+  removed: Record<string, true>;
+  /** True once the place-order on N has succeeded. */
+  placed: boolean;
 }
 
 export function SessionDetailRoute() {
@@ -158,6 +183,10 @@ export function SessionDetailRoute() {
   const [pendingMerge, setPendingMerge] = useState<PendingMerge | null>(null);
   /** Banner shown when step-1 succeeded but step-2 failed (non-override). */
   const [mergeRecovery, setMergeRecovery] = useState<string | null>(null);
+  const [showSplit, setShowSplit] = useState(false);
+  const [pendingSplit, setPendingSplit] = useState<PendingSplit | null>(null);
+  /** Banner for split partial-failure recovery. */
+  const [splitRecovery, setSplitRecovery] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
   const cancelItem = useMutation({
@@ -394,6 +423,173 @@ export function SessionDetailRoute() {
     placeMergeOrder.mutate({ merge });
   };
 
+  // ----- Split: open new session N, remove items from source, place on N --
+  //
+  // Each step is its own mutation that captures progress into `pendingSplit`
+  // before chaining the next one. `removeKeys` and the other idempotency keys
+  // are stable per attempt so retry-after-override re-uses the prior request.
+
+  const itemKey = (it: SplitItem) => `${it.orderId}#${it.itemIndex}`;
+
+  /** Cancel or return a single source item, then drive the next removal or
+   *  the place-order step. */
+  const removeOneSplitItem = (
+    split: PendingSplit,
+    item: SplitItem,
+    override?: string,
+  ) => {
+    const key = itemKey(item);
+    const idemKey = split.removeKeys[key]!;
+    const url = item.isFullCancel
+      ? `/orders/${item.orderId}/items/${item.itemIndex}/cancel`
+      : `/orders/${item.orderId}/items/${item.itemIndex}/return`;
+    const body: Record<string, unknown> = item.isFullCancel
+      ? {
+          idempotency_key: idemKey,
+          is_self: false,
+          within_grace: false,
+        }
+      : {
+          idempotency_key: idemKey,
+          qty: item.qty,
+        };
+    if (override) body.override_pin = override;
+    apiClient
+      .post(url, OrderState, body)
+      .then(() => {
+        const next: PendingSplit = {
+          ...split,
+          removed: { ...split.removed, [key]: true },
+        };
+        setPendingSplit(next);
+        setPendingOverride(null);
+        // Find the next item that hasn't been removed yet.
+        const remaining = next.items.find((x) => !next.removed[itemKey(x)]);
+        if (remaining) {
+          removeOneSplitItem(next, remaining);
+        } else {
+          // All removed — invalidate source views, then place on N.
+          qc.invalidateQueries({ queryKey: ["session", sessionId] });
+          for (const it of next.items) {
+            qc.invalidateQueries({ queryKey: ["order", it.orderId] });
+          }
+          placeSplitOrder(next);
+        }
+      })
+      .catch((e: unknown) => {
+        if (e instanceof ApiError && e.code === "override_required") {
+          setPendingOverride({
+            kind: "split_remove",
+            role: e.envelope.message ?? "manager",
+            itemKey: key,
+          });
+        } else if (e instanceof ApiError) {
+          setSplitRecovery(e.message);
+        }
+      });
+  };
+
+  const placeSplitOrder = (split: PendingSplit, override?: string) => {
+    if (!split.newSessionId) return;
+    const input: PlaceOrderInput = {
+      idempotency_key: split.placeKey,
+      session_id: split.newSessionId,
+      items: split.items.map((i) => ({ product_id: i.productId, qty: i.qty })),
+      ...(override ? { override_pin: override } : {}),
+    };
+    apiClient
+      .post("/orders", OrderState, input)
+      .then(() => {
+        const next: PendingSplit = { ...split, placed: true };
+        setPendingSplit(null);
+        setShowSplit(false);
+        setPendingOverride(null);
+        setSplitRecovery(null);
+        qc.invalidateQueries({ queryKey: ["sessions", "active"] });
+        qc.invalidateQueries({ queryKey: ["session", sessionId] });
+        nav(`/sessions/${next.newSessionId}`);
+      })
+      .catch((e: unknown) => {
+        if (e instanceof ApiError && e.code === "override_required") {
+          setPendingOverride({
+            kind: "split_place_order",
+            role: e.envelope.message ?? "manager",
+          });
+        } else if (e instanceof ApiError) {
+          setSplitRecovery(e.message);
+        }
+      });
+  };
+
+  const openSplitSession = (split: PendingSplit, override?: string) => {
+    const input: OpenSessionInput = {
+      idempotency_key: split.openKey,
+      spot_id: split.toSpotId,
+      ...(override ? { override_pin: override } : {}),
+    };
+    apiClient
+      .post("/sessions", SessionState, input)
+      .then((res) => {
+        const next: PendingSplit = { ...split, newSessionId: res.session_id };
+        setPendingSplit(next);
+        setPendingOverride(null);
+        const first = next.items.find((x) => !next.removed[itemKey(x)]);
+        if (first) {
+          removeOneSplitItem(next, first);
+        } else {
+          placeSplitOrder(next);
+        }
+      })
+      .catch((e: unknown) => {
+        if (e instanceof ApiError && e.code === "override_required") {
+          setPendingOverride({
+            kind: "split_open",
+            role: e.envelope.message ?? "manager",
+          });
+        } else if (e instanceof ApiError) {
+          setSplitRecovery(e.message);
+        }
+      });
+  };
+
+  /** Kick off a fresh split attempt from the modal's onConfirm. */
+  const startSplit = async (toSpotId: number, items: SplitItem[]) => {
+    const removeKeys: Record<string, string> = {};
+    for (const it of items) removeKeys[itemKey(it)] = crypto.randomUUID();
+    const split: PendingSplit = {
+      toSpotId,
+      items,
+      openKey: crypto.randomUUID(),
+      removeKeys,
+      placeKey: crypto.randomUUID(),
+      newSessionId: null,
+      removed: {},
+      placed: false,
+    };
+    setPendingSplit(split);
+    setSplitRecovery(null);
+    openSplitSession(split);
+  };
+
+  /** User-driven retry after a split partial-failure. Re-enters at the
+   *  earliest step that still has work to do. */
+  const retrySplit = () => {
+    if (!pendingSplit) return;
+    setSplitRecovery(null);
+    if (!pendingSplit.newSessionId) {
+      openSplitSession(pendingSplit);
+      return;
+    }
+    const next = pendingSplit.items.find(
+      (x) => !pendingSplit.removed[itemKey(x)],
+    );
+    if (next) {
+      removeOneSplitItem(pendingSplit, next);
+    } else {
+      placeSplitOrder(pendingSplit);
+    }
+  };
+
   const submitOverride = async (pin: string) => {
     if (!pendingOverride) return;
     if (pendingOverride.kind === "cancel") {
@@ -420,6 +616,16 @@ export function SessionDetailRoute() {
       if (pendingMerge) {
         finalizeMerge.mutate({ merge: pendingMerge, override: pin });
       }
+    } else if (pendingOverride.kind === "split_open") {
+      if (pendingSplit) openSplitSession(pendingSplit, pin);
+    } else if (pendingOverride.kind === "split_remove") {
+      if (pendingSplit) {
+        const key = pendingOverride.itemKey;
+        const item = pendingSplit.items.find((x) => itemKey(x) === key);
+        if (item) removeOneSplitItem(pendingSplit, item, pin);
+      }
+    } else if (pendingOverride.kind === "split_place_order") {
+      if (pendingSplit) placeSplitOrder(pendingSplit, pin);
     }
   };
 
@@ -581,6 +787,13 @@ export function SessionDetailRoute() {
           >
             <Trans>Merge into…</Trans>
           </Button>
+          <Button
+            variant="outline"
+            onClick={() => setShowSplit(true)}
+            disabled={pendingSplit !== null || session.status !== "Open"}
+          >
+            <Trans>Split…</Trans>
+          </Button>
         </div>
         {session.payment_taken && (
           <div className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded mt-2 p-2">
@@ -625,6 +838,32 @@ export function SessionDetailRoute() {
                   setMergeRecovery(null);
                   setPendingMerge(null);
                   setShowMerge(false);
+                }}
+              >
+                <Trans>Dismiss</Trans>
+              </Button>
+            </div>
+          </div>
+        )}
+        {splitRecovery && pendingSplit && (
+          <div className="text-amber-800 bg-amber-50 border border-amber-200 rounded mt-2 p-2 text-sm">
+            <div className="mb-2">
+              <Trans>
+                Split partially applied ({splitRecovery}). Retry to resume
+                from the failed step, or dismiss and reconcile manually.
+              </Trans>
+            </div>
+            <div className="flex gap-2">
+              <Button size="sm" onClick={retrySplit}>
+                <Trans>Retry split</Trans>
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  setSplitRecovery(null);
+                  setPendingSplit(null);
+                  setShowSplit(false);
                 }}
               >
                 <Trans>Dismiss</Trans>
@@ -725,6 +964,18 @@ export function SessionDetailRoute() {
             }
           }}
           onConfirm={startMerge}
+        />
+      )}
+
+      {showSplit && (
+        <SplitModal
+          source={session}
+          orders={orders}
+          busy={pendingSplit !== null}
+          onClose={() => {
+            if (!pendingSplit) setShowSplit(false);
+          }}
+          onConfirm={startSplit}
         />
       )}
 

@@ -11,6 +11,7 @@ export * from "./components/connection-status";
 export * from "./components/room-clock";
 export * from "./components/transfer-modal";
 export * from "./components/merge-modal";
+export * from "./components/split-modal";
 export * from "./components/breadcrumbs";
 export * from "./routes/login";
 export * from "./routes/lock";
