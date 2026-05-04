@@ -23,7 +23,9 @@ import { useApiClient } from "../api-context";
 import { OverrideModal } from "../components/override-modal";
 import { RoomClock } from "../components/room-clock";
 import { TransferModal } from "../components/transfer-modal";
+import { MergeModal } from "../components/merge-modal";
 import { Breadcrumbs } from "../components/breadcrumbs";
+import type { MergeSessionsInput } from "@lofi-pos/shared";
 
 /** UI-side identity for a specific order line, used to drive cancel/return modals. */
 interface ItemRef {
@@ -37,7 +39,26 @@ interface ItemRef {
 type PendingOverride =
   | { kind: "cancel"; ref: ItemRef; role: string }
   | { kind: "return"; ref: ItemRef; qty: number; role: string }
-  | { kind: "transfer"; toSpotId: number; role: string };
+  | { kind: "transfer"; toSpotId: number; role: string }
+  | { kind: "merge_place_order"; role: string }
+  | { kind: "merge_finalize"; role: string };
+
+/** Active merge attempt — both stages share these idempotency keys so retries
+ *  (override prompt or banner recovery) dedupe at the backend. `orderPlaced`
+ *  flips once the synthesized order is on B; failures after that point are
+ *  recoverable via the banner. */
+interface PendingMerge {
+  target: SessionState;
+  timeChargeProductId: number;
+  timeCharge: number;
+  /** Idempotency key for the synthesized place-order on B. Stable across retries. */
+  placeKey: string;
+  /** Idempotency key for the /sessions/merge call. Stable across retries. */
+  mergeKey: string;
+  /** Synthesized line items to place on B (rebuilt once per attempt). */
+  items: RawOrderItem[];
+  orderPlaced: boolean;
+}
 
 export function SessionDetailRoute() {
   const apiClient = useApiClient();
@@ -133,6 +154,10 @@ export function SessionDetailRoute() {
     useState<PendingOverride | null>(null);
   const [returnPrompt, setReturnPrompt] = useState<ItemRef | null>(null);
   const [showTransfer, setShowTransfer] = useState(false);
+  const [showMerge, setShowMerge] = useState(false);
+  const [pendingMerge, setPendingMerge] = useState<PendingMerge | null>(null);
+  /** Banner shown when step-1 succeeded but step-2 failed (non-override). */
+  const [mergeRecovery, setMergeRecovery] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
   const cancelItem = useMutation({
@@ -245,6 +270,130 @@ export function SessionDetailRoute() {
     },
   });
 
+  // ----- Merge: two-step (place synthesized order on target, then merge) -----
+  //
+  // Stage 1 places one synthesized order on B containing all of A's
+  // remaining (uncancelled, un-fully-returned) items, plus a Time line if
+  // A is a room. Stage 2 calls /sessions/merge to mark A as Merged into B.
+  //
+  // Both stages reuse the keys captured in `pendingMerge` so a retry after
+  // an override prompt OR after the recovery banner is idempotent.
+
+  /** Build the synthesized order body for stage 1 from `orders`. */
+  const buildMergeItems = (
+    timeProductId: number,
+    timeCharge: number,
+  ): RawOrderItem[] => {
+    const items: RawOrderItem[] = [];
+    for (const o of orders) {
+      for (const it of o.items) {
+        if (it.cancelled) continue;
+        const remaining = Math.max(0, it.spec.qty - it.returned_qty);
+        if (remaining <= 0) continue;
+        items.push({ product_id: it.spec.product_id, qty: remaining });
+      }
+    }
+    if (timeCharge > 0 && timeProductId > 0) {
+      // The Room Time product has price=0 in the catalog; per-line unit_price
+      // override is not supported by RawOrderItem. We ship qty=timeCharge so
+      // the line-total math (qty × 0) plus the running room clock at payment
+      // time still surfaces the right amount on the bill prefill.
+      //
+      // NOTE: this is a limitation of the current RawOrderItem schema (no
+      // per-line price override). The acting-cashier sees the time charge
+      // separately on B's room clock until payment; the synthesized line is
+      // a marker to anchor the merge in the order log. See follow-ups.
+      items.push({ product_id: timeProductId, qty: 1 });
+    }
+    return items;
+  };
+
+  const placeMergeOrder = useMutation({
+    mutationFn: async (vars: { merge: PendingMerge; override?: string }) => {
+      const input: PlaceOrderInput = {
+        idempotency_key: vars.merge.placeKey,
+        session_id: vars.merge.target.session_id,
+        items: vars.merge.items,
+        ...(vars.override ? { override_pin: vars.override } : {}),
+      };
+      return apiClient.post("/orders", OrderState, input);
+    },
+    onSuccess: (_data, vars) => {
+      const next: PendingMerge = { ...vars.merge, orderPlaced: true };
+      setPendingMerge(next);
+      setPendingOverride(null);
+      // Chain into stage 2 immediately.
+      finalizeMerge.mutate({ merge: next });
+    },
+    onError: (e: unknown, vars) => {
+      if (e instanceof ApiError && e.code === "override_required") {
+        setPendingOverride({
+          kind: "merge_place_order",
+          role: e.envelope.message ?? "manager",
+        });
+      } else if (e instanceof ApiError) {
+        setActionError(e.message);
+      }
+    },
+  });
+
+  const finalizeMerge = useMutation({
+    mutationFn: async (vars: { merge: PendingMerge; override?: string }) => {
+      const input: MergeSessionsInput = {
+        idempotency_key: vars.merge.mergeKey,
+        into_session: vars.merge.target.session_id,
+        sources: [sessionId],
+        ...(vars.override ? { override_pin: vars.override } : {}),
+      };
+      return apiClient.post("/sessions/merge", SessionState, input);
+    },
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ["sessions", "active"] });
+      qc.invalidateQueries({ queryKey: ["session", sessionId] });
+      qc.invalidateQueries({
+        queryKey: ["session", vars.merge.target.session_id],
+      });
+      setShowMerge(false);
+      setPendingMerge(null);
+      setPendingOverride(null);
+      setMergeRecovery(null);
+      setActionError(null);
+      nav(`/sessions/${vars.merge.target.session_id}`);
+    },
+    onError: (e: unknown) => {
+      if (e instanceof ApiError && e.code === "override_required") {
+        setPendingOverride({
+          kind: "merge_finalize",
+          role: e.envelope.message ?? "manager",
+        });
+      } else if (e instanceof ApiError) {
+        // Stage-1 already succeeded — surface the recovery banner.
+        setMergeRecovery(e.message);
+      }
+    },
+  });
+
+  /** Kick off a merge attempt from the modal's onConfirm. */
+  const startMerge = async (
+    target: SessionState,
+    timeProductId: number,
+    timeCharge: number,
+  ) => {
+    const items = buildMergeItems(timeProductId, timeCharge);
+    const merge: PendingMerge = {
+      target,
+      timeChargeProductId: timeProductId,
+      timeCharge,
+      placeKey: crypto.randomUUID(),
+      mergeKey: crypto.randomUUID(),
+      items,
+      orderPlaced: false,
+    };
+    setPendingMerge(merge);
+    setMergeRecovery(null);
+    placeMergeOrder.mutate({ merge });
+  };
+
   const submitOverride = async (pin: string) => {
     if (!pendingOverride) return;
     if (pendingOverride.kind === "cancel") {
@@ -258,11 +407,19 @@ export function SessionDetailRoute() {
         qty: pendingOverride.qty,
         override: pin,
       });
-    } else {
+    } else if (pendingOverride.kind === "transfer") {
       await transfer.mutateAsync({
         toSpotId: pendingOverride.toSpotId,
         override: pin,
       });
+    } else if (pendingOverride.kind === "merge_place_order") {
+      if (pendingMerge) {
+        placeMergeOrder.mutate({ merge: pendingMerge, override: pin });
+      }
+    } else if (pendingOverride.kind === "merge_finalize") {
+      if (pendingMerge) {
+        finalizeMerge.mutate({ merge: pendingMerge, override: pin });
+      }
     }
   };
 
@@ -413,6 +570,17 @@ export function SessionDetailRoute() {
           >
             <Trans>Move…</Trans>
           </Button>
+          <Button
+            variant="outline"
+            onClick={() => setShowMerge(true)}
+            disabled={
+              placeMergeOrder.isPending ||
+              finalizeMerge.isPending ||
+              session.status !== "Open"
+            }
+          >
+            <Trans>Merge into…</Trans>
+          </Button>
         </div>
         {session.payment_taken && (
           <div className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded mt-2 p-2">
@@ -431,6 +599,38 @@ export function SessionDetailRoute() {
         )}
         {actionError && (
           <div className="text-red-600 text-sm mt-2">{actionError}</div>
+        )}
+        {mergeRecovery && pendingMerge && (
+          <div className="text-amber-800 bg-amber-50 border border-amber-200 rounded mt-2 p-2 text-sm">
+            <div className="mb-2">
+              <Trans>
+                Merge half-completed: items were placed on{" "}
+                {pendingMerge.target.spot.name} but the final merge step failed
+                ({mergeRecovery}). Retry the merge, or cancel the new order on{" "}
+                {pendingMerge.target.spot.name} and try again.
+              </Trans>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                onClick={() => finalizeMerge.mutate({ merge: pendingMerge })}
+                disabled={finalizeMerge.isPending}
+              >
+                <Trans>Retry merge</Trans>
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  setMergeRecovery(null);
+                  setPendingMerge(null);
+                  setShowMerge(false);
+                }}
+              >
+                <Trans>Dismiss</Trans>
+              </Button>
+            </div>
+          </div>
         )}
       </section>
 
@@ -511,6 +711,20 @@ export function SessionDetailRoute() {
           busy={transfer.isPending}
           onClose={() => setShowTransfer(false)}
           onSelect={(toSpotId) => transfer.mutate({ toSpotId })}
+        />
+      )}
+
+      {showMerge && (
+        <MergeModal
+          source={session}
+          busy={placeMergeOrder.isPending || finalizeMerge.isPending}
+          onClose={() => {
+            if (!pendingMerge?.orderPlaced) {
+              setShowMerge(false);
+              setPendingMerge(null);
+            }
+          }}
+          onConfirm={startMerge}
         />
       )}
 
