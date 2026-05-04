@@ -43,10 +43,16 @@ msgstr "Add an order or enter a non-zero subtotal before charging."
 msgid "Admin"
 msgstr "Admin"
 
+#: ../../packages/pos-ui/src/components/merge-modal.tsx
+msgid "Back"
+msgstr "Back"
+
 #: ../../packages/pos-ui/src/routes/payment.tsx
 msgid "Bank transfer"
 msgstr "Bank transfer"
 
+#: ../../packages/pos-ui/src/components/merge-modal.tsx
+#: ../../packages/pos-ui/src/components/split-modal.tsx
 #: ../../packages/pos-ui/src/components/transfer-modal.tsx
 #: ../../packages/pos-ui/src/routes/session-detail.tsx
 #: ../../packages/pos-ui/src/routes/session-detail.tsx
@@ -69,9 +75,22 @@ msgstr "Charge"
 msgid "Closed sessions still in the local event store. Older history is available in the daily reports stored by the bouncer service."
 msgstr "Closed sessions still in the local event store. Older history is available in the daily reports stored by the bouncer service."
 
+#: ../../packages/pos-ui/src/components/merge-modal.tsx
+msgid "Confirm merge"
+msgstr "Confirm merge"
+
+#: ../../packages/pos-ui/src/components/split-modal.tsx
+msgid "Confirm split"
+msgstr "Confirm split"
+
 #: ../../packages/pos-ui/src/routes/payment.tsx
 msgid "Discount %"
 msgstr "Discount %"
+
+#: ../../packages/pos-ui/src/routes/session-detail.tsx
+#: ../../packages/pos-ui/src/routes/session-detail.tsx
+msgid "Dismiss"
+msgstr "Dismiss"
 
 #: ../../packages/pos-ui/src/components/pin-pad.tsx
 msgid "Enter PIN"
@@ -125,13 +144,37 @@ msgstr "Logout"
 msgid "Max: {max}"
 msgstr "Max: {max}"
 
+#. placeholder {0}: pendingMerge.target.spot.name
+#. placeholder {1}: pendingMerge.target.spot.name
+#: ../../packages/pos-ui/src/routes/session-detail.tsx
+msgid "Merge half-completed: items were placed on {0} but the final merge step failed ({mergeRecovery}). Retry the merge, or cancel the new order on {1} and try again."
+msgstr "Merge half-completed: items were placed on {0} but the final merge step failed ({mergeRecovery}). Retry the merge, or cancel the new order on {1} and try again."
+
+#: ../../packages/pos-ui/src/components/merge-modal.tsx
+#: ../../packages/pos-ui/src/routes/session-detail.tsx
+msgid "Merge into…"
+msgstr "Merge into…"
+
 #: ../../packages/pos-ui/src/routes/payment.tsx
 msgid "Method"
 msgstr "Method"
 
+#. placeholder {0}: source.order_ids.length
+#. placeholder {1}: sourceTimeCharge.toLocaleString("vi-VN")
+#. placeholder {2}: source.spot.name
+#. placeholder {3}: picked.spot.name
+#: ../../packages/pos-ui/src/components/merge-modal.tsx
+msgid "Move {0} order(s) and {1}đ room time from <0>{2}</0> into <1>{3}</1>."
+msgstr "Move {0} order(s) and {1}đ room time from <0>{2}</0> into <1>{3}</1>."
+
+#: ../../packages/pos-ui/src/components/split-modal.tsx
 #: ../../packages/pos-ui/src/components/transfer-modal.tsx
 msgid "Move to spot"
 msgstr "Move to spot"
+
+#: ../../packages/pos-ui/src/components/split-modal.tsx
+msgid "Move which items?"
+msgstr "Move which items?"
 
 #: ../../packages/pos-ui/src/routes/session-detail.tsx
 msgid "Move…"
@@ -140,6 +183,10 @@ msgstr "Move…"
 #: ../../packages/pos-ui/src/routes/login.tsx
 msgid "Network error"
 msgstr "Network error"
+
+#: ../../packages/pos-ui/src/components/merge-modal.tsx
+msgid "No \"Room Time\" product configured. Run setup or add a product with kind=time."
+msgstr "No \"Room Time\" product configured. Run setup or add a product with kind=time."
 
 #: ../../packages/pos-ui/src/routes/sessions.tsx
 msgid "No active sessions."
@@ -153,6 +200,7 @@ msgstr "No history yet — closed sessions will show up here."
 msgid "No idle spots — all spots have an open session."
 msgstr "No idle spots — all spots have an open session."
 
+#: ../../packages/pos-ui/src/components/split-modal.tsx
 #: ../../packages/pos-ui/src/components/transfer-modal.tsx
 msgid "No idle spots available."
 msgstr "No idle spots available."
@@ -160,6 +208,14 @@ msgstr "No idle spots available."
 #: ../../packages/pos-ui/src/routes/spot-picker.tsx
 #~ msgid "No idle spots."
 #~ msgstr "No idle spots."
+
+#: ../../packages/pos-ui/src/components/split-modal.tsx
+msgid "No items to move."
+msgstr "No items to move."
+
+#: ../../packages/pos-ui/src/components/merge-modal.tsx
+msgid "No other open sessions."
+msgstr "No other open sessions."
 
 #: ../../packages/pos-ui/src/routes/spot-picker.tsx
 msgid "No spots configured yet. Open the admin app and add at least one room or table."
@@ -195,6 +251,14 @@ msgid "Payment"
 msgstr "Payment"
 
 #: ../../packages/pos-ui/src/routes/session-detail.tsx
+msgid "Retry merge"
+msgstr "Retry merge"
+
+#: ../../packages/pos-ui/src/routes/session-detail.tsx
+msgid "Retry split"
+msgstr "Retry split"
+
+#: ../../packages/pos-ui/src/routes/session-detail.tsx
 msgid "Return"
 msgstr "Return"
 
@@ -221,6 +285,15 @@ msgstr "Session is {0}."
 #: ../../packages/pos-ui/src/routes/session-detail.tsx
 msgid "Sessions"
 msgstr "Sessions"
+
+#: ../../packages/pos-ui/src/routes/session-detail.tsx
+msgid "Split partially applied ({splitRecovery}). Retry to resume from the failed step, or dismiss and reconcile manually."
+msgstr "Split partially applied ({splitRecovery}). Retry to resume from the failed step, or dismiss and reconcile manually."
+
+#: ../../packages/pos-ui/src/components/split-modal.tsx
+#: ../../packages/pos-ui/src/routes/session-detail.tsx
+msgid "Split…"
+msgstr "Split…"
 
 #: ../../packages/pos-ui/src/routes/session-detail.tsx
 msgid "Submit"

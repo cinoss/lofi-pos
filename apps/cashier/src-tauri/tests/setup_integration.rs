@@ -194,6 +194,31 @@ async fn setup_post_creates_owner_and_writes_settings_atomically() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn setup_post_seeds_room_time_product() {
+    let rig = boot_rig(false).await;
+    let resp = rig
+        .client
+        .post(format!("{}/admin/setup", rig.base_url))
+        .json(&valid_setup_body())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 201);
+
+    let m = rig.master.lock().unwrap();
+    let products = m.list_products().unwrap();
+    let time_products: Vec<_> = products.iter().filter(|p| p.kind == "time").collect();
+    assert_eq!(
+        time_products.len(),
+        1,
+        "expected exactly one kind=time product seeded by setup"
+    );
+    assert_eq!(time_products[0].name, "Room Time");
+    assert_eq!(time_products[0].price, 0);
+    assert_eq!(time_products[0].route, "none");
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn setup_post_returns_conflict_after_setup_complete() {
     let rig = boot_rig(true).await;
     let resp = rig
